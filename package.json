@@ -1,0 +1,21 @@
+{
+  "name": "devflow-agent",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "ISC",
+  "scripts": {
+    "dev": "tsx --env-file=.env src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "ping": "tsx --env-file=.env src/ping.ts",
+    "memory": "tsx --env-file=.env src/memory.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.122.0",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}
