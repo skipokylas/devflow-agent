@@ -1,4 +1,4 @@
-import type { Board } from "../board";
+import { isMine, type Board } from "../board";
 import type { BoardComment, Ticket, TicketRef, TicketStatus } from "../types";
 import { GitHub, type Api } from "./http";
 import { Projects } from "./projects";
@@ -39,7 +39,6 @@ export type GitHubBoardConfig = {
 export class GitHubBoard implements Board {
   private readonly api: Api;
   private readonly projects: Projects;
-  private self: string | null;
 
   constructor(
     private readonly cfg: GitHubBoardConfig,
@@ -47,7 +46,6 @@ export class GitHubBoard implements Board {
   ) {
     this.api = api ?? new GitHub(cfg.token);
     this.projects = new Projects(this.api, cfg.owner, cfg.ownerType, cfg.projectNumber, cfg.statuses);
-    this.self = cfg.self ?? null;
   }
 
   async ready(): Promise<Ticket[]> {
@@ -91,7 +89,6 @@ export class GitHubBoard implements Board {
   }
 
   async commentsSince(ref: TicketRef, since: string): Promise<BoardComment[]> {
-    const me = await this.whoami();
     const query = since ? `?since=${encodeURIComponent(since)}` : "";
     const raw = await this.api.get<Comment[]>(
       `/repos/${this.cfg.scope}/issues/${ref.externalId}/comments${query}`,
@@ -102,18 +99,10 @@ export class GitHubBoard implements Board {
       .map((c) => ({
         id: String(c.id),
         author: c.user?.login ?? "?",
-        mine: c.user?.login === me,
+        mine: isMine(c.body),
         body: c.body,
         createdAt: c.created_at,
       }));
-  }
-
-  /** Логін власника токена: без нього агент прийме власне питання за відповідь. */
-  private async whoami(): Promise<string> {
-    if (this.self) return this.self;
-    const user = await this.api.get<{ login: string }>("/user");
-    this.self = user.login;
-    return this.self;
   }
 
   private async statusOf(number: number): Promise<TicketStatus> {

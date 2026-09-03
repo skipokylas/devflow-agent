@@ -1,4 +1,4 @@
-import type { Board } from "./board";
+import { isMine, type Board } from "./board";
 import type { BoardComment, Ticket, TicketRef, TicketStatus } from "./types";
 
 /** Дошка в памʼяті: планувальник і сценарії перевірок працюють без мережі. */
@@ -26,7 +26,7 @@ export class InMemoryBoard implements Board {
   }
 
   async comment(ref: TicketRef, body: string): Promise<string> {
-    return this.push(ref, { author: "devflow", mine: true, body });
+    return this.push(ref, { author: "devflow", mine: isMine(body), body });
   }
 
   async editComment(ref: TicketRef, commentId: string, body: string): Promise<void> {

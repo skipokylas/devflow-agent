@@ -79,17 +79,17 @@ check("квиток переведений у in_review, не done", (await boar
 
 const thread = await board.commentsSince(ref("1"), new Date(0).toISOString());
 check("агент писав у квиток", thread.some((c) => c.mine && c.body.includes("Потрібна відповідь")));
-check("звіт у квитку", thread.some((c) => c.mine && c.body.startsWith("### devflow")));
+check("звіт у квитку", thread.some((c) => c.mine && c.body.includes("### devflow")));
 
 // 3a. звіт: один коментар, який редагується, а не низка нових
 const reportRun = await storage.load(first?.id ?? "");
 check("звіт створений і привʼязаний до run", reportRun.report !== null);
 
 const mine = (await board.commentsSince(ref("1"), new Date(0).toISOString())).filter((c) => c.mine);
-check("звіт один, не низка коментарів", mine.filter((c) => c.body.startsWith("### devflow")).length === 1,
+check("звіт один, не низка коментарів", mine.filter((c) => c.body.includes("### devflow")).length === 1,
   `${mine.length} своїх коментарів`);
 
-const body = mine.find((c) => c.body.startsWith("### devflow"))?.body ?? "";
+const body = mine.find((c) => c.body.includes("### devflow"))?.body ?? "";
 check("у звіті є задача", body.includes("**Задача**"));
 check("у звіті є питання агента", body.includes("**Питання:**"));
 check("у звіті є відповідь людини", body.includes("resend"));

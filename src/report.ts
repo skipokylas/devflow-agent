@@ -55,7 +55,7 @@ const short = (input: unknown): string => {
 
 export function renderReport(run: Run, spans: Span[]): string {
   const s = spans.length ? summary(spans) : null;
-  const out: string[] = [`### devflow · \`${run.id}\` · ${STATUS[run.status]}`, ""];
+  const out: string[] = [`<!-- devflow report:${run.id} -->`, `### devflow · \`${run.id}\` · ${STATUS[run.status]}`, ""];
 
   let iteration = 0;
   let pendingTools: string[] = [];

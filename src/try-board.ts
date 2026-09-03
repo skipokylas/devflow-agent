@@ -35,12 +35,12 @@ check("статус збережений", (await board.get(ref)).status === "in
 
 // 2. канал: агент питає, людина відповідає
 const start = new Date(0).toISOString();
-await board.comment(ref, "Який провайдер пошти?");
+await board.comment(ref, "Який провайдер пошти?\n\n<!-- devflow run:r1 step:ask -->");
 board.reply(ref, "resend");
 
 const thread = await board.commentsSince(ref, start);
 check("у треді два коментарі", thread.length === 2, `${thread.length}`);
-check("свій коментар позначений mine", thread[0]?.mine === true);
+check("свій коментар пізнається за маркером у тілі", thread[0]?.mine === true);
 check("відповідь людини не mine", thread[1]?.mine === false);
 check("відповідь людини знайдена", thread.find((c) => !c.mine)?.body === "resend");
 

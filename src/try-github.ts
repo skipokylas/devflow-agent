@@ -29,7 +29,12 @@ const api: Api = {
     if (path === "/user") return { login: "devflow-bot" } as T;
     if (path.includes("/comments"))
       return [
-        { id: 1, body: "Потрібна відповідь", created_at: "2026-09-03T10:05:00Z", user: { login: "devflow-bot" } },
+        {
+          id: 1,
+          body: "**Потрібна відповідь.** Який провайдер?\n\n<!-- devflow run:r1 step:ask -->",
+          created_at: "2026-09-03T10:05:00Z",
+          user: { login: "skipokylas" },
+        },
         { id: 2, body: "resend", created_at: "2026-09-03T10:07:00Z", user: { login: "skipokylas" } },
       ] as T;
     const n = Number(path.split("/").pop());
@@ -116,8 +121,9 @@ check("мутація містить optionId колонки Blocked", mutation?
 
 // 3. свої коментарі відрізняються від чужих
 const thread = await board.commentsSince(ref, "2026-09-03T10:00:00Z");
-check("свій коментар позначений mine", thread.find((c) => c.body === "Потрібна відповідь")?.mine === true);
-check("відповідь людини не mine", thread.find((c) => c.body === "resend")?.mine === false);
+// Той самий логін в обох коментарях: під особистим токеном інакше й буває.
+check("свій коментар пізнається за маркером", thread.find((c) => c.body.includes("Потрібна"))?.mine === true);
+check("відповідь людини з тим самим логіном — не mine", thread.find((c) => c.body === "resend")?.mine === false);
 
 // 4. невідома колонка падає зрозуміло, а не тихо
 let clear = false;
