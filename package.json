@@ -12,7 +12,8 @@
     "try-wire": "tsx src/try-wire.ts",
     "try-storage": "tsx src/try-storage.ts",
     "try-tools": "tsx src/try-tools.ts",
-    "try-loop": "tsx src/try-loop.ts"
+    "try-loop": "tsx src/try-loop.ts",
+    "ab": "tsx --env-file=.env src/experiment/ab.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",

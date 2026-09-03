@@ -1,32 +1,13 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
-import { CliChannel } from "./channel/cli";
 import { advance, resume, retry, NotRetryable, NotWaiting, type Deps } from "./agent/loop";
-import { demoLlm, realLlm } from "./agent/llm";
-import { defaultTools } from "./agent/tools";
-import { FileStorage, RunNotFound } from "./db/storage";
-import { FileSink } from "./trace/sink";
+import { buildDeps } from "./deps";
+import { RunNotFound } from "./db/storage";
 import { summary, toHtml, toText } from "./trace/render";
 import type { Run } from "./agent/types";
 
-// Composition root: єдине місце, де обираються конкретні реалізації портів.
-const storage = new FileStorage();
-const trace = new FileSink();
-
-const deps: Deps = {
-  llm: process.env["AGENT_LLM"] === "demo" ? demoLlm() : realLlm(),
-  storage,
-  trace,
-  tools: defaultTools,
-  channel: new CliChannel(),
-  model: process.env["MODEL"] ?? "claude-opus-5",
-  maxSteps: Number(process.env["MAX_STEPS"] ?? 8),
-  root: process.cwd(),
-  system:
-    "Ти — менеджер розробки. Працюєш з репозиторієм користувача. " +
-    "Перш ніж щось стверджувати про код, читай файли інструментом read_file. " +
-    "Якщо бракує інформації або потрібне підтвердження — питай через ask_human, не вигадуй.",
-};
+const deps: Deps = buildDeps();
+const { storage, trace } = deps;
 
 function usage(): void {
   console.log(`Використання:
@@ -38,6 +19,7 @@ function usage(): void {
 
 Змінні оточення:
   AGENT_LLM=demo   офлайн-модель без мережі й витрат
+  AGENT_PROMPT=v1  варіант системного промпта (типово v3)
   MODEL=...        модель (типово claude-opus-5)
   MAX_STEPS=...    ліміт кроків циклу (типово 8)`);
 }
