@@ -1,17 +1,22 @@
 import { randomUUID } from "node:crypto";
+import fs from "node:fs/promises";
 import { CliChannel } from "./channel/cli";
 import { advance, resume, retry, NotRetryable, NotWaiting, type Deps } from "./agent/loop";
 import { demoLlm, realLlm } from "./agent/llm";
 import { defaultTools } from "./agent/tools";
 import { FileStorage, RunNotFound } from "./db/storage";
+import { FileSink } from "./trace/sink";
+import { summary, toHtml, toText } from "./trace/render";
 import type { Run } from "./agent/types";
 
 // Composition root: єдине місце, де обираються конкретні реалізації портів.
 const storage = new FileStorage();
+const trace = new FileSink();
 
 const deps: Deps = {
   llm: process.env["AGENT_LLM"] === "demo" ? demoLlm() : realLlm(),
   storage,
+  trace,
   tools: defaultTools,
   channel: new CliChannel(),
   model: process.env["MODEL"] ?? "claude-opus-5",
@@ -28,6 +33,7 @@ function usage(): void {
   agent run "<задача>"              створити run і працювати до паузи
   agent reply <runId> "<відповідь>" продовжити run, що чекає на людину
   agent retry <runId>               повторити перерваний run (failed або обірваний)
+  agent trace <runId>               дерево кроків: що робив і скільки коштувало
   agent show <runId>                показати стан run
 
 Змінні оточення:
@@ -74,6 +80,25 @@ async function cmdRetry(args: string[]): Promise<void> {
   console.log(`\n${finished.id} → ${finished.status}`);
 }
 
+async function cmdTrace(args: string[]): Promise<void> {
+  const id = args[0];
+  if (!id) throw new Error("потрібен id: agent trace <runId>");
+
+  const spans = await trace.read(id);
+  if (spans.length === 0) throw new Error(`для ${id} немає трейсу`);
+
+  const s = summary(spans);
+  console.log(
+    `${id}  ${s.llmCalls} звернень · ${s.toolCalls} інструментів · ${s.errors} помилок · ` +
+      `${s.inputTokens}→${s.outputTokens} токенів · $${s.cost.toFixed(4)}\n`,
+  );
+  console.log(toText(spans));
+
+  const file = `.runs/traces/${id}.html`;
+  await fs.writeFile(file, toHtml(id, spans), "utf8");
+  console.log(`\nводоспад: open ${file}`);
+}
+
 async function cmdShow(args: string[]): Promise<void> {
   const id = args[0];
   if (!id) throw new Error("потрібен id: agent show <runId>");
@@ -105,6 +130,9 @@ try {
       break;
     case "retry":
       await cmdRetry(rest);
+      break;
+    case "trace":
+      await cmdTrace(rest);
       break;
     case "show":
       await cmdShow(rest);

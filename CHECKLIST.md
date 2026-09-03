@@ -9,7 +9,8 @@ src/agent/tools.ts    ToolRegistry, ask_human, list_files, read_file, access
 src/agent/loop.ts     advance() / resume() / retry()
 src/agent/channel.ts  Channel (порт) + src/channel/cli.ts
 src/db/storage.ts     Storage, FileStorage (create/load/save, version)
-src/cli.ts            run | reply | retry | show + composition root
+src/trace/            Span, TraceSink, FileSink, Tracer, рендер тексту й HTML
+src/cli.ts            run | reply | retry | trace | show + composition root
 src/ping.ts           один виклик моделі          ← навчальний
 src/memory.ts         накопичення історії вручну  ← навчальний
 src/try-*.ts          п'ять сценаріїв перевірки
@@ -195,7 +196,7 @@ Channel   ──►  CliChannel           друк у stdout        (ще не �
 - [ ] `ask_human` реєстром не виконується
 - [ ] `access: write` без дозволу → `NotApproved`
 
-### G. Цикл — `npm run try-loop` (18 перевірок)
+### G. Цикл і трейс — `npm run try-loop` (23 перевірки)
 
 - [ ] помилка інструмента → `tool_result` з `is_error: true`, run іде далі
 - [ ] `maxSteps` вичерпано → `failed`
@@ -206,6 +207,9 @@ Channel   ──►  CliChannel           друк у stdout        (ще не �
 - [ ] помилка моделі → `failed`, причина в `run.error`, не застрягання в `running`
 - [ ] `retry` після падіння доводить до `done` і очищає `error`
 - [ ] `retry` на `done` → `NotRetryable`
+- [ ] спани записані, `tool_call` висить на `llm_call`
+- [ ] два корені в дереві: `run` і `reply` — межа процесів видна
+- [ ] `question` і `answer` потрапили у трейс
 
 ### H. Наскрізний прогін фази 0 (без витрат)
 

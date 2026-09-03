@@ -6,6 +6,8 @@ import { NotRetryable, NotWaiting, advance, resume, retry, type Deps } from "./a
 import { defaultTools } from "./agent/tools";
 import type { Run } from "./agent/types";
 import { FileStorage } from "./db/storage";
+import { FileSink } from "./trace/sink";
+import { summary, toTree } from "./trace/render";
 
 let failed = 0;
 function check(name: string, ok: boolean, detail = ""): void {
@@ -22,9 +24,10 @@ class SilentChannel implements Channel {
 const dir = ".runs/try-loop";
 await fs.rm(dir, { recursive: true, force: true });
 const storage = new FileStorage(dir);
+const trace = new FileSink(`${dir}/traces`);
 
 function deps(llm: Deps["llm"], channel = new SilentChannel(), maxSteps = 8): Deps {
-  return { llm, storage, tools: defaultTools, channel, model: "fake", maxSteps, root: process.cwd() };
+  return { llm, storage, trace, tools: defaultTools, channel, model: "fake", maxSteps, root: process.cwd() };
 }
 
 const draft = (id: string): Run => ({
@@ -115,6 +118,18 @@ const draft = (id: string): Run => ({
     caught = e instanceof NotWaiting;
   }
   check("resume не на паузі → NotWaiting", caught);
+}
+
+// 8. трейс: дерево, вартість, межа процесів
+{
+  const spans = await trace.read("run_pause");
+  const s = summary(spans);
+  check("спани записані", spans.length > 0, `${spans.length}`);
+  check("два корені: run і reply", toTree(spans).length === 2);
+  check("tool_call висить на llm_call", spans.some((x) => x.type === "tool_call" && x.parentId !== null));
+  check("порахований llm_call", s.llmCalls >= 2, `${s.llmCalls}`);
+  check("питання й відповідь у трейсі",
+    spans.some((x) => x.type === "question") && spans.some((x) => x.type === "answer"));
 }
 
 console.log(failed === 0 ? "\nусі перевірки пройшли" : `\nпровалено: ${failed}`);

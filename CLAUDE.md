@@ -178,8 +178,10 @@ interface Executor {
 
 ## Трасування
 
-`events` обслуговує і облік вартості, і дерево виконання, тому формат — спани,
-а не плоский лог:
+Реалізовано: `src/trace/` — `Span`, порт `TraceSink`, `FileSink` (JSONL на
+прогін), `Tracer`, рендер у текст і HTML; команда `agent trace <id>`.
+
+Спани обслуговують і облік вартості, і дерево виконання, тому формат такий:
 
 ```ts
 type Span = {
@@ -349,17 +351,18 @@ npm run typecheck                     # tsc --noEmit
 npm run dev -- run "<задача>"         # створити run і працювати до паузи
 npm run dev -- reply <id> "<текст>"   # продовжити run, що чекає на людину
 npm run dev -- retry <id>             # повторити перерваний run
+npm run dev -- trace <id>             # дерево кроків, час і вартість
 npm run dev -- show <id>              # стан run
 
 npm run try-wire      # справжній HTTP-запит через локальний сервер-підміну
 npm run try-storage   # 11 перевірок FileStorage
 npm run try-tools     # 14 перевірок реєстру інструментів
 npm run try-llm       # 7 перевірок підробленої моделі
-npm run try-loop      # 18 перевірок циклу
+npm run try-loop      # 23 перевірки циклу
 ```
 
 Змінні: `AGENT_LLM=demo` (офлайн-модель, без витрат), `MODEL`, `MAX_STEPS`.
-Стан runs — у `.runs/`, поза git.
+Стан runs — у `.runs/`, трейси — у `.runs/traces/<runId>.jsonl`, поза git.
 
 Діагностика запиту: `ANTHROPIC_LOG=debug npm run ping` — вбудоване логування SDK,
 але глибше двох рівнів вкладеності воно згортає; тоді `try-wire`.

@@ -1,5 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { Storage } from "../db/storage";
+import { Tracer, type OpenSpan, type TraceSink } from "../trace/sink";
 import type { Channel } from "./channel";
 import type { Llm } from "./llm";
 import { ASK_HUMAN, type ToolContext, type ToolRegistry } from "./tools";
@@ -10,6 +11,7 @@ export type Deps = {
   storage: Storage;
   tools: ToolRegistry;
   channel: Channel;
+  trace: TraceSink;
   model: string;
   maxSteps: number;
   root: string;
@@ -29,27 +31,53 @@ export class NotRetryable extends Error {
 }
 
 /** Крутить цикл до завершення або до паузи на людині. Зберігає стан після кожного кроку. */
-export async function advance(run: Run, deps: Deps): Promise<Run> {
+export async function advance(run: Run, deps: Deps, parentId: string | null = null): Promise<Run> {
   let current = run;
+  const tracer = new Tracer(deps.trace, run.id);
+  const root = tracer.start();
+  const name = parentId ? "advance" : "run";
 
   try {
-    return await loop(current, deps, (next) => (current = next));
+    const finished = await loop(current, deps, tracer, root.id, (next) => (current = next));
+    await tracer.finish(root, { parentId, type: "run", name, output: finished.status });
+    return finished;
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await tracer.finish(root, { parentId, type: "run", name, error: message });
     // Будь-яка помилка (401, 429, обрив мережі) не має лишати run у статусі running назавжди.
-    return await fail(current, err instanceof Error ? err.message : String(err), deps, err);
+    return await fail(current, message, deps, err);
   }
 }
 
-async function loop(start: Run, deps: Deps, track: (run: Run) => void): Promise<Run> {
+async function loop(
+  start: Run,
+  deps: Deps,
+  tracer: Tracer,
+  rootId: string,
+  track: (run: Run) => void,
+): Promise<Run> {
   let current = start;
 
   for (let step = 1; step <= deps.maxSteps; step++) {
+    const call = tracer.start();
     const response = await deps.llm({
       model: deps.model,
       max_tokens: 4096,
       ...(deps.system ? { system: deps.system } : {}),
       tools: deps.tools.definitions(),
       messages: current.messages,
+    });
+    await tracer.finish(call, {
+      parentId: rootId,
+      type: "llm_call",
+      name: deps.model,
+      input: { step, messages: current.messages.length },
+      output: response.stop_reason,
+      cost: {
+        model: deps.model,
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+      },
     });
 
     current = await push(current, { role: "assistant", content: response.content }, deps);
@@ -76,7 +104,7 @@ async function loop(start: Run, deps: Deps, track: (run: Run) => void): Promise<
     for (const use of toolUses) {
       if (use.name === ASK_HUMAN) continue;
       await deps.channel.notify(current, `  → ${use.name} ${JSON.stringify(use.input)}`);
-      results.push(await runTool(deps, use, ctx));
+      results.push(await runTool(deps, use, ctx, tracer, call.id));
     }
 
     // Тепер пауза, якщо модель попросила людину.
@@ -85,7 +113,7 @@ async function loop(start: Run, deps: Deps, track: (run: Run) => void): Promise<
       for (const extra of extraAsks) {
         results.push(errorResult(extra.id, "за раз можна поставити лише одне питання"));
       }
-      return await pause(current, ask, results, deps);
+      return await pause(current, ask, results, deps, tracer, call.id);
     }
 
     current = await push(current, { role: "user", content: results }, deps);
@@ -123,6 +151,9 @@ export async function resume(runId: string, answer: string, deps: Deps): Promise
   const run = await deps.storage.load(runId);
   if (run.status !== "waiting_human" || !run.pending) throw new NotWaiting(runId, run.status);
 
+  const tracer = new Tracer(deps.trace, run.id);
+  const root = tracer.start();
+
   const { toolUseId, partialResults } = run.pending;
   const resumed = await push(
     { ...run, status: "running", pending: null, error: null },
@@ -133,7 +164,12 @@ export async function resume(runId: string, answer: string, deps: Deps): Promise
     deps,
   );
 
-  return advance(resumed, deps);
+  const answerSpan = tracer.start();
+  await tracer.finish(answerSpan, { parentId: root.id, type: "answer", name: "людина", output: answer });
+
+  const finished = await advance(resumed, deps, root.id);
+  await tracer.finish(root, { parentId: null, type: "run", name: "reply", output: finished.status });
+  return finished;
 }
 
 // ─────────────────────────── допоміжне ───────────────────────────
@@ -147,6 +183,8 @@ async function pause(
   ask: Anthropic.ToolUseBlock,
   partialResults: Anthropic.ToolResultBlockParam[],
   deps: Deps,
+  tracer: Tracer,
+  parentId: string,
 ): Promise<Run> {
   const input = ask.input as { question?: string; options?: string[] };
   const question = input.question ?? "(питання без тексту)";
@@ -158,6 +196,9 @@ async function pause(
     pending: { toolUseId: ask.id, question, options, partialResults },
   });
 
+  const span = tracer.start();
+  await tracer.finish(span, { parentId, type: "question", name: "ask_human", output: question });
+
   await deps.channel.ask(paused, { question, options });
   return paused;
 }
@@ -167,12 +208,30 @@ async function runTool(
   deps: Deps,
   use: Anthropic.ToolUseBlock,
   ctx: ToolContext,
+  tracer: Tracer,
+  parentId: string,
 ): Promise<Anthropic.ToolResultBlockParam> {
+  const span = tracer.start();
   try {
     const output = await deps.tools.execute(use.name, use.input, ctx);
+    await tracer.finish(span, {
+      parentId,
+      type: "tool_call",
+      name: use.name,
+      input: use.input,
+      output: output.length > 500 ? `${output.slice(0, 500)}…` : output,
+    });
     return { type: "tool_result", tool_use_id: use.id, content: output };
   } catch (err) {
-    return errorResult(use.id, err instanceof Error ? err.message : String(err));
+    const message = err instanceof Error ? err.message : String(err);
+    await tracer.finish(span, {
+      parentId,
+      type: "tool_call",
+      name: use.name,
+      input: use.input,
+      error: message,
+    });
+    return errorResult(use.id, message);
   }
 }
 

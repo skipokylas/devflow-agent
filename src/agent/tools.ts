@@ -93,6 +93,7 @@ function resolveInRoot(ctx: ToolContext, rel: string): string {
 /** Теки, які роздують контекст і нічого не пояснюють про проєкт. */
 const IGNORED = new Set([
   "node_modules", ".git", ".runs", "dist", "build", "coverage", ".next", ".turbo",
+  ".idea", ".vscode", ".DS_Store",
 ]);
 
 export const askHuman = defineTool({
