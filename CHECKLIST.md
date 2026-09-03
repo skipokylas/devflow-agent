@@ -14,6 +14,9 @@ src/board/            Board (порт), Ticket, TicketStatus, InMemoryBoard, м�
 src/board/github/     http (fetch + ETag), projects (GraphQL), GitHubBoard
 src/config.ts         .devflow/config.json через zod
 src/guard.ts          звірка дошки з remote, привʼязка run до репо
+src/init.ts           devflow init: remote, проєкт, звірка колонок
+src/env.ts            секрети з ~/.devflow/.env
+bin/devflow.js        глобальна команда після npm link
 src/scheduler.ts      watch: черга, відповіді з коментарів, відновлення
 src/channel/board.ts  BoardChannel — питання коментарем під квитком
 src/cli.ts            run | reply | retry | watch | list | trace | show

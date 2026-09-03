@@ -63,6 +63,27 @@ mutation($projectId: ID!, $contentId: ID!) {
 
 export type ProjectItem = { itemId: string; issueNumber: number; status: string | null };
 
+const LIST_QUERY = `
+query($login: String!) {
+  user(login: $login) { projectsV2(first: 20) { nodes { number title } } }
+}`;
+
+const ORG_LIST_QUERY = LIST_QUERY.replace("user(login:", "organization(login:");
+
+/** Для init: показати, які проєкти є, замість «здогадайся про номер». */
+export async function listProjects(
+  api: Api,
+  login: string,
+  ownerType: "user" | "organization",
+): Promise<{ number: number; title: string }[]> {
+  const data = await api.graphql<{
+    user?: { projectsV2: { nodes: { number: number; title: string }[] } } | null;
+    organization?: { projectsV2: { nodes: { number: number; title: string }[] } } | null;
+  }>(ownerType === "organization" ? ORG_LIST_QUERY : LIST_QUERY, { login });
+
+  return (data.user ?? data.organization)?.projectsV2.nodes ?? [];
+}
+
 export class Projects {
   private meta: ProjectMeta | null = null;
 
@@ -94,6 +115,11 @@ export class Projects {
       options: new Map(project.field.options.map((o) => [o.name, o.id])),
     };
     return this.meta;
+  }
+
+  /** Назви колонок поля Status у проєкті — щоб init звірив їх із конфігом. */
+  async statusOptions(): Promise<string[]> {
+    return [...(await this.load()).options.keys()];
   }
 
   async items(): Promise<ProjectItem[]> {

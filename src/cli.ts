@@ -11,6 +11,7 @@ import { InMemoryBoard } from "./board/memory";
 import { GitHubBoard } from "./board/github/board";
 import type { Board } from "./board/board";
 import { loadConfig } from "./config";
+import { init } from "./init";
 import { watch } from "./scheduler";
 import { RunNotFound } from "./db/storage";
 import { summary, toHtml, toText } from "./trace/render";
@@ -28,6 +29,7 @@ function usage(): void {
   devflow reply <runId> "<відповідь>" продовжити run, що чекає на людину
   devflow retry <runId>               повторити перерваний run (failed або обірваний)
   devflow auth                        записати токени в ~/.devflow/.env
+  devflow init                        налаштувати дошку для цього репозиторію
   devflow board                       перевірити звʼязок із дошкою: готові квитки
   devflow watch                       планувальник: бере задачі з дошки й веде їх
   devflow list                        усі runs цього репозиторію
@@ -87,7 +89,7 @@ async function cmdRetry(args: string[]): Promise<void> {
 }
 
 async function buildBoard(): Promise<Board> {
-  const config = await loadConfig(repo.root);
+  const config = await loadConfig(repo.root, repo.id);
   const token = process.env["GITHUB_TOKEN"];
 
   if (!config.board) throw new Error("немає .devflow/config.json з секцією board");
@@ -226,6 +228,9 @@ try {
       break;
     case "retry":
       await cmdRetry(rest);
+      break;
+    case "init":
+      await init(repo, process.env["GITHUB_TOKEN"]);
       break;
     case "auth":
       await cmdAuth();

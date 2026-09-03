@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
 import { ticketStatusSchema } from "./board/types";
@@ -38,12 +39,26 @@ export const configSchema = z.object({
 
 export type Config = z.infer<typeof configSchema>;
 
-export async function loadConfig(root: string): Promise<Config> {
-  const file = path.join(root, ".devflow", "config.json");
+/** У репозиторії — комітиться й бачить команда. У домівці — коли чужий репо не чіпаємо. */
+export function configPaths(root: string, repoId: string): { inRepo: string; inHome: string } {
+  return {
+    inRepo: path.join(root, ".devflow", "config.json"),
+    inHome: path.join(os.homedir(), ".devflow", "repos", `${repoId}.json`),
+  };
+}
+
+async function readIfExists(file: string): Promise<unknown | null> {
   try {
-    return configSchema.parse(JSON.parse(await fs.readFile(file, "utf8")));
+    return JSON.parse(await fs.readFile(file, "utf8"));
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return configSchema.parse({});
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw err;
   }
+}
+
+/** Порядок пошуку: конфіг у репозиторії виграє над локальним. */
+export async function loadConfig(root: string, repoId = ""): Promise<Config> {
+  const paths = configPaths(root, repoId);
+  const raw = (await readIfExists(paths.inRepo)) ?? (repoId ? await readIfExists(paths.inHome) : null);
+  return configSchema.parse(raw ?? {});
 }
