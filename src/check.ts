@@ -72,6 +72,24 @@ for (const [name, body] of docs) {
 }
 say(drift.length === 0, "лічильники в документах збігаються з кодом", drift.join("; "));
 
+// Роадмапа не має мовчки відставати: правило про актуалізацію діяло, але за
+// ROADMAP.md ніхто не стежив, і вона розійшлася з кодом на десяток комітів.
+const sinceRoadmap = git([
+  "log",
+  "--oneline",
+  `${git(["log", "-1", "--format=%H", "--", "ROADMAP.md"]).trim()}..HEAD`,
+  "--",
+  "src/",
+])
+  .split("\n")
+  .filter(Boolean);
+
+say(
+  sinceRoadmap.length <= 3,
+  "роадмапа не відстала від коду",
+  sinceRoadmap.length > 3 ? `${sinceRoadmap.length} комітів у src/ після останньої правки ROADMAP.md` : "",
+);
+
 const claude = docs[0]?.[1] ?? "";
 const commands = ["run", "reply", "retry", "board", "watch", "list", "trace", "show", "auth", "init"];
 const undocumented = commands.filter((c) => !claude.includes(`devflow ${c}`));
