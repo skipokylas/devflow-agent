@@ -10,6 +10,7 @@ src/agent/loop.ts     advance() / resume() / retry()
 src/agent/channel.ts  Channel (порт) + src/channel/cli.ts
 src/db/storage.ts     Storage, FileStorage (create/load/save, version)
 src/trace/            Span, TraceSink, FileSink, Tracer, рендер тексту й HTML
+src/board/            Board (порт), Ticket, TicketStatus, InMemoryBoard, маркери
 src/cli.ts            run | reply | retry | list | trace | show
 src/deps.ts           composition root
 src/repo.ts           ідентичність репо за remote URL, тека стану

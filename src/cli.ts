@@ -36,6 +36,7 @@ function newRun(task: string): Run {
     messages: [{ role: "user", content: task }],
     pending: null,
     error: null,
+    ticket: null,
     version: 0,
   };
 }

@@ -28,6 +28,7 @@ const draft: Run = {
   messages: [{ role: "user", content: "додай passwordless-авторизацію" }],
   pending: null,
   error: null,
+  ticket: null,
   version: 0,
 };
 

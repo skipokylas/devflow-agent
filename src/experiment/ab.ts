@@ -58,6 +58,7 @@ for (const variant of variants) {
       messages: [{ role: "user", content: question }],
       pending: null,
       error: null,
+      ticket: null,
       version: 0,
     };
 

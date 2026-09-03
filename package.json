@@ -13,7 +13,8 @@
     "try-storage": "tsx src/try-storage.ts",
     "try-tools": "tsx src/try-tools.ts",
     "try-loop": "tsx src/try-loop.ts",
-    "ab": "tsx --env-file=.env src/experiment/ab.ts"
+    "ab": "tsx --env-file=.env src/experiment/ab.ts",
+    "try-board": "tsx src/try-board.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
