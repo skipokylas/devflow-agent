@@ -13,7 +13,7 @@ import { GitHubBoard } from "./board/github/board";
 import type { Board } from "./board/board";
 import { loadConfig } from "./config";
 import { init } from "./init";
-import { watch } from "./scheduler";
+import { recover, tick, watch } from "./scheduler";
 import { RunNotFound } from "./db/storage";
 import { summary, toHtml, toText } from "./trace/render";
 import { newRun } from "./agent/run";
@@ -32,7 +32,8 @@ function usage(): void {
   devflow auth                        записати токени в ~/.devflow/.env
   devflow init                        налаштувати дошку для цього репозиторію
   devflow board                       перевірити звʼязок із дошкою: готові квитки
-  devflow watch                       планувальник: бере задачі з дошки й веде їх
+  devflow tick                        один оберт планувальника і вихід
+  devflow watch                       планувальник у циклі: бере задачі й веде їх
   devflow list                        усі runs цього репозиторію
   devflow trace <runId>               дерево кроків: що робив і скільки коштувало
   devflow show <runId>                показати стан run
@@ -94,6 +95,13 @@ async function buildBoard(): Promise<Board> {
     projectNumber: config.board.projectNumber,
     statuses: config.board.statuses,
   });
+}
+
+/** Один оберт і вихід: для ручного контролю або cron замість постійного процесу. */
+async function cmdTick(): Promise<void> {
+  const board = process.env["AGENT_BOARD"] === "memory" ? new InMemoryBoard() : await buildBoard();
+  await recover(deps, (line) => console.log(line));
+  await tick(deps, board, (line) => console.log(line), repo);
 }
 
 async function cmdWatch(): Promise<void> {
@@ -225,6 +233,9 @@ try {
       break;
     case "board":
       await cmdBoard();
+      break;
+    case "tick":
+      await cmdTick();
       break;
     case "watch":
       await cmdWatch();
