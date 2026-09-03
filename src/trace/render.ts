@@ -33,6 +33,24 @@ export function summary(spans: Span[]) {
 const ms = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}s` : `${n}ms`);
 
 type LlmOutput = { stopReason: string | null; content: { type: string; text?: string; name?: string }[] };
+type RunOutput = { status: string; answer: string };
+
+function isRunOutput(v: unknown): v is RunOutput {
+  return typeof v === "object" && v !== null && "status" in v && "answer" in v;
+}
+
+/** Питання й відповідь беруться з кореневих спанів — вони обрамляють увесь прогін. */
+export function conversation(spans: Span[]): { task: string; answer: string; status: string } {
+  const roots = toTree(spans).map((n) => n.span);
+  const first = roots[0];
+  const last = roots[roots.length - 1];
+  const out = last && isRunOutput(last.output) ? last.output : null;
+  return {
+    task: typeof first?.input === "string" ? first.input : "",
+    answer: out?.answer ?? "",
+    status: out?.status ?? (last?.error ? "failed" : ""),
+  };
+}
 
 function isLlmOutput(v: unknown): v is LlmOutput {
   return typeof v === "object" && v !== null && "stopReason" in v && "content" in v;
@@ -42,6 +60,7 @@ function isLlmOutput(v: unknown): v is LlmOutput {
 function headline(span: Span): string {
   if (span.error) return `✗ ${span.error}`;
   const out = span.output;
+  if (isRunOutput(out)) return out.status;
   if (!isLlmOutput(out)) return String(out ?? "");
 
   const text = out.content.filter((b) => b.type === "text").map((b) => b.text ?? "").join(" ");
@@ -56,9 +75,11 @@ function detail(span: Span): string {
     ? span.output.content
         .map((b) => (b.type === "text" ? b.text : JSON.stringify(b, null, 2)))
         .join("\n\n")
-    : typeof span.output === "string"
-      ? span.output
-      : JSON.stringify(span.output, null, 2);
+    : isRunOutput(span.output)
+      ? span.output.answer
+      : typeof span.output === "string"
+        ? span.output
+        : JSON.stringify(span.output, null, 2);
 
   const input = span.input === null ? "" : `входить:\n${JSON.stringify(span.input, null, 2)}\n\n`;
   return `${input}виходить:\n${out ?? ""}`;
@@ -82,8 +103,18 @@ export function toText(spans: Span[]): string {
     }
   }
 
+  const { task, answer } = conversation(spans);
+  if (task) lines.push(`питання:  ${oneLine(task)}`, "");
   walk(toTree(spans), 0);
+  if (answer) lines.push("", "відповідь:", indent(answer));
   return lines.join("\n");
+}
+
+function indent(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => `  ${line}`)
+    .join("\n");
 }
 
 function oneLine(text: string): string {
@@ -135,6 +166,10 @@ table{width:100%;border-collapse:collapse} td{border-bottom:1px solid var(--line
 .bar{width:34%;position:relative;min-width:120px} .bar i{position:absolute;top:8px;height:7px;background:var(--bar);border-radius:2px}
 tr.err .bar i{background:var(--err)} tr.err .out{color:var(--err)}
 .chip{display:inline-block;font-size:10px;padding:1px 5px;border-radius:9px;border:1px solid var(--line);color:var(--dim);margin-right:6px}
+.qa{border:1px solid var(--line);border-radius:7px;margin-bottom:22px;overflow:hidden}
+.qa .lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);padding:9px 14px 0}
+.qa .body{padding:3px 14px 12px;white-space:pre-wrap;word-break:break-word}
+.qa .q{border-bottom:1px solid var(--line);background:rgba(127,127,127,.05)}
 .chip.llm_call{border-color:var(--bar);color:var(--bar)} .chip.question,.chip.answer{border-color:#9c5c16;color:#9c5c16}
 tr.row{cursor:pointer} tr.row:hover{background:rgba(127,127,127,.07)}
 .tw{display:inline-block;width:12px;color:var(--dim)} tr.row.open .tw{transform:rotate(90deg)}
@@ -144,7 +179,8 @@ tr.detail pre{margin:0;padding:10px 14px;white-space:pre-wrap;word-break:break-w
 <h1>${runId}</h1>
 <div class="meta">${s.llmCalls} звернень до моделі · ${s.toolCalls} викликів інструментів · ${s.errors} помилок ·
 ${ms(s.durationMs)} · ${s.inputTokens}→${s.outputTokens} токенів · ${money(s.cost) || "$0"}</div>
-<div class="meta">клік по рядку — повний вміст</div>
+${panel(conversation(spans))}
+<div class="meta">клік по рядку — повний вміст кроку</div>
 <table>${rows.join("")}</table>
 <script>
 document.querySelectorAll("tr.row").forEach(function (row) {
@@ -156,6 +192,13 @@ document.querySelectorAll("tr.row").forEach(function (row) {
   });
 });
 </script>`;
+}
+
+function panel(c: { task: string; answer: string }): string {
+  if (!c.task && !c.answer) return "";
+  const q = c.task ? `<div class="q"><div class="lbl">питання</div><div class="body">${escape(c.task)}</div></div>` : "";
+  const a = c.answer ? `<div><div class="lbl">відповідь</div><div class="body">${escape(c.answer)}</div></div>` : "";
+  return `<div class="qa">${q}${a}</div>`;
 }
 
 function escape(text: string): string {

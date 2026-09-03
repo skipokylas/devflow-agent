@@ -39,11 +39,17 @@ export async function advance(run: Run, deps: Deps, parentId: string | null = nu
 
   try {
     const finished = await loop(current, deps, tracer, root.id, (next) => (current = next));
-    await tracer.finish(root, { parentId, type: "run", name, output: finished.status });
+    await tracer.finish(root, {
+      parentId,
+      type: "run",
+      name,
+      input: taskOf(run),
+      output: { status: finished.status, answer: answerOf(finished) },
+    });
     return finished;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    await tracer.finish(root, { parentId, type: "run", name, error: message });
+    await tracer.finish(root, { parentId, type: "run", name, input: taskOf(run), error: message });
     // Будь-яка помилка (401, 429, обрив мережі) не має лишати run у статусі running назавжди.
     return await fail(current, message, deps, err);
   }
@@ -169,7 +175,13 @@ export async function resume(runId: string, answer: string, deps: Deps): Promise
   await tracer.finish(answerSpan, { parentId: root.id, type: "answer", name: "людина", output: answer });
 
   const finished = await advance(resumed, deps, root.id);
-  await tracer.finish(root, { parentId: null, type: "run", name: "reply", output: finished.status });
+  await tracer.finish(root, {
+    parentId: null,
+    type: "run",
+    name: "reply",
+    input: taskOf(run),
+    output: { status: finished.status, answer: answerOf(finished) },
+  });
   return finished;
 }
 
@@ -238,6 +250,29 @@ async function runTool(
 
 function errorResult(id: string, message: string): Anthropic.ToolResultBlockParam {
   return { type: "tool_result", tool_use_id: id, content: message, is_error: true };
+}
+
+/** Початкова задача — те, з чого почався run. Показується в шапці трейсу. */
+function taskOf(run: Run): string {
+  const first = run.messages[0];
+  if (!first) return "";
+  return typeof first.content === "string"
+    ? first.content
+    : first.content.map((b) => ("text" in b ? b.text : "")).join(" ");
+}
+
+/** Фінальна відповідь — останнє, що написала модель. */
+function answerOf(run: Run): string {
+  for (let i = run.messages.length - 1; i >= 0; i--) {
+    const message = run.messages[i];
+    if (!message || message.role !== "assistant") continue;
+    const text =
+      typeof message.content === "string"
+        ? message.content
+        : message.content.map((b) => ("text" in b ? b.text : "")).join("");
+    if (text.trim()) return text;
+  }
+  return "";
 }
 
 function renderText(content: Anthropic.ContentBlock[]): string {
