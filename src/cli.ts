@@ -5,6 +5,9 @@ import { advance, resume, retry, NotRetryable, NotWaiting, type Deps } from "./a
 import { buildDeps } from "./deps";
 import { stateDir } from "./repo";
 import { InMemoryBoard } from "./board/memory";
+import { GitHubBoard } from "./board/github/board";
+import type { Board } from "./board/board";
+import { loadConfig } from "./config";
 import { watch } from "./scheduler";
 import { RunNotFound } from "./db/storage";
 import { summary, toHtml, toText } from "./trace/render";
@@ -19,6 +22,7 @@ function usage(): void {
   agent run "<задача>"              створити run і працювати до паузи
   agent reply <runId> "<відповідь>" продовжити run, що чекає на людину
   agent retry <runId>               повторити перерваний run (failed або обірваний)
+  agent board                       перевірити звʼязок із дошкою: готові квитки
   agent watch                       планувальник: бере задачі з дошки й веде їх
   agent list                        усі runs цього репозиторію
   agent trace <runId>               дерево кроків: що робив і скільки коштувало
@@ -28,6 +32,8 @@ function usage(): void {
   AGENT_LLM=demo   офлайн-модель без мережі й витрат
   AGENT_PROMPT=v1  варіант системного промпта (типово v4)
   AGENT_REPO=path  репозиторій, з яким працюємо (типово поточна тека)
+  AGENT_BOARD=memory  дошка в памʼяті замість GitHub (для перевірок)
+  GITHUB_TOKEN     токен зі scope repo і project
   MODEL=...        модель (типово claude-opus-5)
   MAX_STEPS=...    ліміт кроків циклу (типово 8)`);
 }
@@ -71,13 +77,40 @@ async function cmdRetry(args: string[]): Promise<void> {
   console.log(`\n${finished.id} → ${finished.status}`);
 }
 
+async function buildBoard(): Promise<Board> {
+  const config = await loadConfig(repo.root);
+  const token = process.env["GITHUB_TOKEN"];
+
+  if (!config.board) throw new Error("немає .devflow/config.json з секцією board");
+  if (!token) throw new Error("немає GITHUB_TOKEN у .env");
+
+  return new GitHubBoard({
+    token,
+    scope: config.board.scope,
+    owner: config.board.owner,
+    ownerType: config.board.ownerType,
+    projectNumber: config.board.projectNumber,
+    statuses: config.board.statuses,
+  });
+}
+
 async function cmdWatch(): Promise<void> {
-  // Поки Board має лише реалізацію в памʼяті — справжня дошка підключається наступним кроком.
-  const board = new InMemoryBoard();
+  const board = process.env["AGENT_BOARD"] === "memory" ? new InMemoryBoard() : await buildBoard();
   const interval = Number(process.env["WATCH_INTERVAL"] ?? 30) * 1000;
 
   console.log(`${repo.id}  опитування раз на ${interval / 1000}с, Ctrl+C щоб зупинити\n`);
   await watch(deps, board, { intervalMs: interval });
+}
+
+async function cmdBoard(): Promise<void> {
+  const board = await buildBoard();
+  const tickets = await board.ready();
+
+  console.log(`готових квитків: ${tickets.length}\n`);
+  for (const t of tickets) {
+    console.log(`#${t.ref.externalId}  ${t.title}`);
+    console.log(`${" ".repeat(4)}${t.ref.url}`);
+  }
 }
 
 async function cmdList(): Promise<void> {
@@ -152,6 +185,9 @@ try {
       break;
     case "retry":
       await cmdRetry(rest);
+      break;
+    case "board":
+      await cmdBoard();
       break;
     case "watch":
       await cmdWatch();

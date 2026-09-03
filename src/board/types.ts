@@ -20,7 +20,7 @@ export type TicketRef = z.infer<typeof ticketRefSchema>;
  * Власний статус. У провайдерів він влаштований по-різному — поле Projects,
  * мітка, список, — тому відповідність задається конфігом репозиторію, не кодом.
  */
-export const ticketStatusSchema = z.enum(["todo", "in_progress", "blocked", "done"]);
+export const ticketStatusSchema = z.enum(["todo", "in_progress", "in_review", "blocked", "done"]);
 export type TicketStatus = z.infer<typeof ticketStatusSchema>;
 
 export type Ticket = {

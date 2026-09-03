@@ -15,7 +15,8 @@
     "try-loop": "tsx src/try-loop.ts",
     "ab": "tsx --env-file=.env src/experiment/ab.ts",
     "try-board": "tsx src/try-board.ts",
-    "try-watch": "tsx src/try-watch.ts"
+    "try-watch": "tsx src/try-watch.ts",
+    "try-github": "tsx src/try-github.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",

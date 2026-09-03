@@ -1,0 +1,16 @@
+{
+  "board": {
+    "provider": "github",
+    "scope": "skipokylas/devflow-agent",
+    "owner": "skipokylas",
+    "ownerType": "user",
+    "projectNumber": 0,
+    "statuses": {
+      "todo": "Ready",
+      "in_progress": "In progress",
+      "in_review": "In review",
+      "blocked": "Blocked",
+      "done": "Done"
+    }
+  }
+}

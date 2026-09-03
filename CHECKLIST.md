@@ -11,6 +11,8 @@ src/agent/channel.ts  Channel (порт) + src/channel/cli.ts
 src/db/storage.ts     Storage, FileStorage (create/load/save, version)
 src/trace/            Span, TraceSink, FileSink, Tracer, рендер тексту й HTML
 src/board/            Board (порт), Ticket, TicketStatus, InMemoryBoard, маркери
+src/board/github/     http (fetch + ETag), projects (GraphQL), GitHubBoard
+src/config.ts         .devflow/config.json через zod
 src/scheduler.ts      watch: черга, відповіді з коментарів, відновлення
 src/channel/board.ts  BoardChannel — питання коментарем під квитком
 src/cli.ts            run | reply | retry | watch | list | trace | show
@@ -240,6 +242,16 @@ AGENT_LLM=demo npm run dev -- reply <runId> "resend"
 - [ ] квиток переводиться в `done`, у ньому питання і фінальний звіт
 - [ ] обірваний `running` після перезапуску повертається в `queued`
 - [ ] повторний оберт не створює дублів на той самий квиток
+
+### K. GitHub — `npm run try-github` (9 перевірок, без мережі)
+
+- [ ] `ready` бере лише колонку, що мапиться на `todo`
+- [ ] issue розібраний у `Ticket`: заголовок, посилання, мітки
+- [ ] картка в іншій колонці не потрапляє в `ready`
+- [ ] `get` мапить колонку назад у наш статус
+- [ ] `setStatus` шле мутацію з `optionId` потрібної колонки
+- [ ] свій коментар відрізняється від чужого за логіном токена
+- [ ] відсутня в проєкті колонка → зрозуміла помилка, не тиха
 
 ### I. Ще немає
 
