@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import type Anthropic from "@anthropic-ai/sdk";
 import type { Channel, Question } from "./agent/channel";
 import { fakeMessage, fakeText, fakeToolUse, scriptedLlm } from "./agent/llm";
-import { NotWaiting, advance, resume, type Deps } from "./agent/loop";
+import { NotRetryable, NotWaiting, advance, resume, retry, type Deps } from "./agent/loop";
 import { defaultTools } from "./agent/tools";
 import type { Run } from "./agent/types";
 import { FileStorage } from "./db/storage";
@@ -79,7 +79,33 @@ const draft = (id: string): Run => ({
   check("run завершився", done.status === "done");
 }
 
-// 5. resume того, хто не на паузі
+// 5. падіння виклику моделі не лишає run у "running"
+{
+  const llm = async () => {
+    throw new Error("401 API key is invalid");
+  };
+  const run = await advance(await storage.create(draft("run_401")), deps(llm));
+  check("помилка моделі → failed", run.status === "failed");
+  check("причина записана в run.error", run.error?.includes("401") === true);
+}
+
+// 6. retry піднімає failed і доводить до кінця
+{
+  const llm = scriptedLlm([fakeText("готово")]);
+  const done = await retry("run_401", deps(llm));
+  check("retry після падіння → done", done.status === "done");
+  check("retry очистив error", done.error === null);
+
+  let guarded = false;
+  try {
+    await retry("run_401", deps(scriptedLlm([])));
+  } catch (e) {
+    guarded = e instanceof NotRetryable;
+  }
+  check("retry на done → NotRetryable", guarded);
+}
+
+// 7. resume того, хто не на паузі
 {
   const run = await storage.create(draft("run_running"));
   let caught = false;

@@ -3,17 +3,16 @@
 ## Карта: що є, чого немає
 
 ```
-є        src/agent/types.ts   runSchema (zod) → type Run
-є        src/agent/llm.ts     Llm, realLlm, scriptedLlm, fake*
-є        src/db/storage.ts       Storage, FileStorage (create/load/save, version)
-є        src/ping.ts          один виклик моделі
-є        src/memory.ts        накопичення історії вручну
-є        src/try-*.ts         сценарії перевірки
-
-є        src/agent/tools.ts   ToolRegistry, ask_human, read_file, access
-є        src/agent/loop.ts    advance() / resume()
-є        src/agent/channel.ts Channel (порт) + src/channel/cli.ts
-є        src/cli.ts           run | reply | show + composition root
+src/agent/types.ts    runSchema (zod) → Run, Pending; поле error
+src/agent/llm.ts      Llm, realLlm, scriptedLlm, demoLlm, fake*
+src/agent/tools.ts    ToolRegistry, ask_human, read_file, access
+src/agent/loop.ts     advance() / resume() / retry()
+src/agent/channel.ts  Channel (порт) + src/channel/cli.ts
+src/db/storage.ts     Storage, FileStorage (create/load/save, version)
+src/cli.ts            run | reply | retry | show + composition root
+src/ping.ts           один виклик моделі          ← навчальний
+src/memory.ts         накопичення історії вручну  ← навчальний
+src/try-*.ts          п'ять сценаріїв перевірки
 ```
 
 ---
@@ -102,6 +101,11 @@ save(run)                                  load(id)
    └─ rename(tmp → run_x.json)   ← атомарно
 ```
 
+Помилка будь-де в `advance` не лишає run у `running`: вона перехоплюється,
+статус стає `failed`, причина лягає в поле `error`. Продовжити такий run —
+`agent retry <id>`. Поле `error` додане зі схемним `.default(null)`, тому файли,
+записані до його появи, читаються далі.
+
 `rename` у межах однієї ФС атомарний: на диску або старий файл цілком, або новий цілком. Прямий `writeFile` у цільовий файл дав би обрізаний JSON, якби процес помер посеред запису.
 
 `save` повертає новий обʼєкт і не мутує аргумент — тому виклик завжди `run = await storage.save(run)`. Забуте присвоєння = вічний `VersionConflict` на наступному кроці.
@@ -136,7 +140,7 @@ Channel   ──►  CliChannel           друк у stdout        (ще не �
 - [ ] `.env` існує, у ньому справжній `ANTHROPIC_API_KEY`
 - [ ] `git status` — `.env` не відстежується, у списку тільки `.env.example`
 
-### B. Персистенція — `npm run try-storage`
+### B. Персистенція — `npm run try-storage` (11 перевірок)
 
 Має бути 11 галочок. Кожна доводить окрему властивість:
 
@@ -154,7 +158,7 @@ Channel   ──►  CliChannel           друк у stdout        (ще не �
 
 Далі руками: `cat .runs/try/run_demo.json` — переконайся, що структура файлу збігається з `runSchema`.
 
-### C. Підроблена модель — `npm run try-llm`
+### C. Підроблена модель — `npm run try-llm` (7 перевірок)
 
 - [ ] `виклик 1 → stop_reason tool_use` — сигнал «виконай інструмент»
 - [ ] `виклик 1 → блок tool_use з id` — id, за яким потім знайдеться `tool_result`
@@ -179,7 +183,7 @@ Channel   ──►  CliChannel           друк у stdout        (ще не �
 - [ ] `npm run memory` — на друге питання відповідає правильно, `input_tokens` другого виклику більший за перший
 - [ ] порівняй вартість: той самий `ping` з `claude-haiku-4-5` замість `claude-opus-5`
 
-### F. Реєстр інструментів — `npm run try-tools`
+### F. Реєстр інструментів — `npm run try-tools` (9 перевірок)
 
 - [ ] `read_file` повертає справжній вміст
 - [ ] невалідний `input` від моделі ловить zod
@@ -188,7 +192,7 @@ Channel   ──►  CliChannel           друк у stdout        (ще не �
 - [ ] `ask_human` реєстром не виконується
 - [ ] `access: write` без дозволу → `NotApproved`
 
-### G. Цикл — `npm run try-loop`
+### G. Цикл — `npm run try-loop` (18 перевірок)
 
 - [ ] помилка інструмента → `tool_result` з `is_error: true`, run іде далі
 - [ ] `maxSteps` вичерпано → `failed`
@@ -196,8 +200,9 @@ Channel   ──►  CliChannel           друк у stdout        (ще не �
 - [ ] `partialResults` зберігає результат інструмента з тієї ж ітерації
 - [ ] `resume` віддає обидва `tool_result` одним `user`-повідомленням
 - [ ] `resume` не на паузі → `NotWaiting`
-- [ ] помилка виклику моделі → `failed` + причина в полі `error` (не застрягання в `running`)
-- [ ] `agent retry <id>` продовжує `failed`; на `done` і `waiting_human` відбивається
+- [ ] помилка моделі → `failed`, причина в `run.error`, не застрягання в `running`
+- [ ] `retry` після падіння доводить до `done` і очищає `error`
+- [ ] `retry` на `done` → `NotRetryable`
 
 ### H. Наскрізний прогін фази 0 (без витрат)
 
