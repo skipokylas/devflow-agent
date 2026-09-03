@@ -4,6 +4,8 @@ import path from "node:path";
 import { advance, resume, retry, NotRetryable, NotWaiting, type Deps } from "./agent/loop";
 import { buildDeps } from "./deps";
 import { stateDir } from "./repo";
+import { InMemoryBoard } from "./board/memory";
+import { watch } from "./scheduler";
 import { RunNotFound } from "./db/storage";
 import { summary, toHtml, toText } from "./trace/render";
 import type { Run } from "./agent/types";
@@ -17,6 +19,7 @@ function usage(): void {
   agent run "<задача>"              створити run і працювати до паузи
   agent reply <runId> "<відповідь>" продовжити run, що чекає на людину
   agent retry <runId>               повторити перерваний run (failed або обірваний)
+  agent watch                       планувальник: бере задачі з дошки й веде їх
   agent list                        усі runs цього репозиторію
   agent trace <runId>               дерево кроків: що робив і скільки коштувало
   agent show <runId>                показати стан run
@@ -66,6 +69,15 @@ async function cmdRetry(args: string[]): Promise<void> {
 
   const finished = await retry(id, deps);
   console.log(`\n${finished.id} → ${finished.status}`);
+}
+
+async function cmdWatch(): Promise<void> {
+  // Поки Board має лише реалізацію в памʼяті — справжня дошка підключається наступним кроком.
+  const board = new InMemoryBoard();
+  const interval = Number(process.env["WATCH_INTERVAL"] ?? 30) * 1000;
+
+  console.log(`${repo.id}  опитування раз на ${interval / 1000}с, Ctrl+C щоб зупинити\n`);
+  await watch(deps, board, { intervalMs: interval });
 }
 
 async function cmdList(): Promise<void> {
@@ -140,6 +152,9 @@ try {
       break;
     case "retry":
       await cmdRetry(rest);
+      break;
+    case "watch":
+      await cmdWatch();
       break;
     case "list":
       await cmdList();

@@ -212,7 +212,7 @@ async function pause(
   const paused = await deps.storage.save({
     ...run,
     status: "waiting_human",
-    pending: { toolUseId: ask.id, question, options, partialResults },
+    pending: { toolUseId: ask.id, question, options, partialResults, askedAt: new Date().toISOString() },
   });
 
   const span = tracer.start();

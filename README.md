@@ -41,6 +41,7 @@ AGENT_LLM=demo npm run dev -- reply <runId> "resend"
 npm run dev -- run "<задача>"          створити run і працювати до паузи
 npm run dev -- reply <id> "<текст>"    продовжити run, що чекає на людину
 npm run dev -- retry <id>              повторити перерваний run
+npm run dev -- watch                   планувальник: дошка → черга → робота
 npm run dev -- list                    усі runs цього репозиторію
 npm run dev -- trace <id>              дерево кроків, час і вартість
 npm run dev -- show <id>               стан run

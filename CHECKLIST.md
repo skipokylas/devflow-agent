@@ -11,7 +11,9 @@ src/agent/channel.ts  Channel (порт) + src/channel/cli.ts
 src/db/storage.ts     Storage, FileStorage (create/load/save, version)
 src/trace/            Span, TraceSink, FileSink, Tracer, рендер тексту й HTML
 src/board/            Board (порт), Ticket, TicketStatus, InMemoryBoard, маркери
-src/cli.ts            run | reply | retry | list | trace | show
+src/scheduler.ts      watch: черга, відповіді з коментарів, відновлення
+src/channel/board.ts  BoardChannel — питання коментарем під квитком
+src/cli.ts            run | reply | retry | watch | list | trace | show
 src/deps.ts           composition root
 src/repo.ts           ідентичність репо за remote URL, тека стану
 src/ping.ts           один виклик моделі          ← навчальний
@@ -229,6 +231,15 @@ AGENT_LLM=demo npm run dev -- reply <runId> "resend"
 - [ ] перший процес завершується зі статусом `waiting_human`
 - [ ] `show` між процесами показує історію й питання
 - [ ] `reply` в новому процесі доводить run до `done`, нічого не перепитуючи
+
+### J. Планувальник — `npm run try-watch` (12 перевірок)
+
+- [ ] на кожен готовий квиток створюється run, квиток іде з `todo`
+- [ ] пауза не блокує чергу: другий квиток береться, поки перший чекає
+- [ ] відповідь у коментарі продовжує run до `done`
+- [ ] квиток переводиться в `done`, у ньому питання і фінальний звіт
+- [ ] обірваний `running` після перезапуску повертається в `queued`
+- [ ] повторний оберт не створює дублів на той самий квиток
 
 ### I. Ще немає
 

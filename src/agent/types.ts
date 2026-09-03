@@ -16,6 +16,8 @@ export const pendingSchema = z.object({
   toolUseId: z.string().min(1),
   question: z.string().min(1),
   options: z.array(z.string()),
+  /** Мітка часу питання: коментарі після неї вважаються відповіддю. */
+  askedAt: z.string().default(""),
   partialResults: z.array(toolResultParam),
 });
 
