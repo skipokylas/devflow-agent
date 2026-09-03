@@ -72,7 +72,8 @@ async function loop(
       type: "llm_call",
       name: deps.model,
       input: { step, messages: current.messages.length },
-      output: response.stop_reason,
+      // Повний content, а не лише stop_reason: саме тут видно, що модель вирішила й написала.
+      output: { stopReason: response.stop_reason, content: response.content },
       cost: {
         model: deps.model,
         inputTokens: response.usage.input_tokens,
@@ -219,7 +220,7 @@ async function runTool(
       type: "tool_call",
       name: use.name,
       input: use.input,
-      output: output.length > 500 ? `${output.slice(0, 500)}…` : output,
+      output: output.length > 4000 ? `${output.slice(0, 4000)}…` : output,
     });
     return { type: "tool_result", tool_use_id: use.id, content: output };
   } catch (err) {

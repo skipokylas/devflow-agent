@@ -31,6 +31,38 @@ export function summary(spans: Span[]) {
 }
 
 const ms = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}s` : `${n}ms`);
+
+type LlmOutput = { stopReason: string | null; content: { type: string; text?: string; name?: string }[] };
+
+function isLlmOutput(v: unknown): v is LlmOutput {
+  return typeof v === "object" && v !== null && "stopReason" in v && "content" in v;
+}
+
+/** Однорядковий підсумок для дерева: що модель сказала або що вона попросила. */
+function headline(span: Span): string {
+  if (span.error) return `✗ ${span.error}`;
+  const out = span.output;
+  if (!isLlmOutput(out)) return String(out ?? "");
+
+  const text = out.content.filter((b) => b.type === "text").map((b) => b.text ?? "").join(" ");
+  const tools = out.content.filter((b) => b.type === "tool_use").map((b) => b.name).join(", ");
+  if (text.trim()) return text;
+  return tools ? `просить: ${tools}` : String(out.stopReason ?? "");
+}
+
+/** Повний вміст для розгортання. */
+function detail(span: Span): string {
+  const out = isLlmOutput(span.output)
+    ? span.output.content
+        .map((b) => (b.type === "text" ? b.text : JSON.stringify(b, null, 2)))
+        .join("\n\n")
+    : typeof span.output === "string"
+      ? span.output
+      : JSON.stringify(span.output, null, 2);
+
+  const input = span.input === null ? "" : `входить:\n${JSON.stringify(span.input, null, 2)}\n\n`;
+  return `${input}виходить:\n${out ?? ""}`;
+}
 const money = (n: number) => (n === 0 ? "" : `$${n.toFixed(4)}`);
 
 export function toText(spans: Span[]): string {
@@ -40,7 +72,7 @@ export function toText(spans: Span[]): string {
     for (const { span, children } of nodes) {
       const pad = "  ".repeat(depth);
       const label = span.type === "llm_call" || span.type === "run" ? span.name : `${span.name} ${brief(span.input)}`;
-      const status = oneLine(span.error ? `✗ ${span.error}` : String(span.output ?? ""));
+      const status = oneLine(headline(span));
       const cell = `${pad}${label}`;
       lines.push(
         `${cell.padEnd(46).slice(0, 46)} ${ms(span.endedAt - span.startedAt).padStart(7)}  ` +
@@ -74,17 +106,18 @@ export function toHtml(runId: string, spans: Span[]): string {
     for (const { span, children } of nodes) {
       const left = ((span.startedAt - t0) / total) * 100;
       const width = Math.max(((span.endedAt - span.startedAt) / total) * 100, 0.6);
-      rows.push(`<tr class="${span.error ? "err" : ""}">
+      rows.push(`<tr class="row ${span.error ? "err" : ""}" data-id="${span.id}">
   <td class="name" style="padding-left:${8 + depth * 18}px">
-    <span class="chip ${span.type}">${span.type}</span> ${escape(span.name)}
+    <span class="tw">▸</span><span class="chip ${span.type}">${span.type}</span> ${escape(span.name)}
     <span class="arg">${escape(brief(span.input))}</span>
   </td>
   <td class="bar"><i style="left:${left}%;width:${width}%"></i></td>
   <td class="num">${ms(span.endedAt - span.startedAt)}</td>
   <td class="num">${span.cost ? `${span.cost.inputTokens}→${span.cost.outputTokens}` : ""}</td>
   <td class="num">${money(priceOf(span.cost))}</td>
-  <td class="out">${escape(oneLine(String(span.error ?? span.output ?? "")).slice(0, 200))}</td>
-</tr>`);
+  <td class="out">${escape(oneLine(headline(span)).slice(0, 200))}</td>
+</tr>
+<tr class="detail" data-for="${span.id}" hidden><td colspan="6"><pre>${escape(detail(span))}</pre></td></tr>`);
       walk(children, depth + 1);
     }
   }
@@ -103,11 +136,26 @@ table{width:100%;border-collapse:collapse} td{border-bottom:1px solid var(--line
 tr.err .bar i{background:var(--err)} tr.err .out{color:var(--err)}
 .chip{display:inline-block;font-size:10px;padding:1px 5px;border-radius:9px;border:1px solid var(--line);color:var(--dim);margin-right:6px}
 .chip.llm_call{border-color:var(--bar);color:var(--bar)} .chip.question,.chip.answer{border-color:#9c5c16;color:#9c5c16}
+tr.row{cursor:pointer} tr.row:hover{background:rgba(127,127,127,.07)}
+.tw{display:inline-block;width:12px;color:var(--dim)} tr.row.open .tw{transform:rotate(90deg)}
+tr.detail pre{margin:0;padding:10px 14px;white-space:pre-wrap;word-break:break-word;
+  max-height:420px;overflow:auto;background:rgba(127,127,127,.07);border-radius:5px;font-size:12px}
 </style>
 <h1>${runId}</h1>
 <div class="meta">${s.llmCalls} звернень до моделі · ${s.toolCalls} викликів інструментів · ${s.errors} помилок ·
 ${ms(s.durationMs)} · ${s.inputTokens}→${s.outputTokens} токенів · ${money(s.cost) || "$0"}</div>
-<table>${rows.join("")}</table>`;
+<div class="meta">клік по рядку — повний вміст</div>
+<table>${rows.join("")}</table>
+<script>
+document.querySelectorAll("tr.row").forEach(function (row) {
+  row.addEventListener("click", function () {
+    var d = document.querySelector('tr.detail[data-for="' + row.dataset.id + '"]');
+    if (!d) return;
+    d.hidden = !d.hidden;
+    row.classList.toggle("open", !d.hidden);
+  });
+});
+</script>`;
 }
 
 function escape(text: string): string {
