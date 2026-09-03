@@ -77,7 +77,13 @@ async function loop(
       parentId: rootId,
       type: "llm_call",
       name: deps.model,
-      input: { step, messages: current.messages.length },
+      // Повний запит, а не його розмір: інакше в переглядачі не видно, що саме пішло в модель.
+      input: {
+        step,
+        system: deps.system ?? "",
+        tools: deps.tools.definitions().map((t) => t.name),
+        messages: current.messages,
+      },
       // Повний content, а не лише stop_reason: саме тут видно, що модель вирішила й написала.
       output: { stopReason: response.stop_reason, content: response.content },
       cost: {
@@ -232,7 +238,7 @@ async function runTool(
       type: "tool_call",
       name: use.name,
       input: use.input,
-      output: output.length > 4000 ? `${output.slice(0, 4000)}…` : output,
+      output: output.length > 20_000 ? `${output.slice(0, 20_000)}…(обрізано)` : output,
     });
     return { type: "tool_result", tool_use_id: use.id, content: output };
   } catch (err) {

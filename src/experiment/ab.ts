@@ -22,8 +22,11 @@ const QUESTIONS = [
   "які інструменти доступні агенту?",
 ];
 
-const variants = process.argv.slice(2);
-if (variants.length < 2) throw new Error("вкажи два варіанти: npm run ab -- v1 v2");
+const args = process.argv.slice(2);
+const repeatFlag = args.indexOf("--repeat");
+const repeats = repeatFlag === -1 ? 1 : Number(args[repeatFlag + 1] ?? 1);
+const variants = repeatFlag === -1 ? args : args.slice(0, repeatFlag);
+if (variants.length < 2) throw new Error("вкажи два варіанти: npm run ab -- v1 v3 --repeat 3");
 
 type Row = {
   variant: string; question: string; llm: number; tools: number;
@@ -48,6 +51,7 @@ for (const variant of variants) {
   });
 
   for (const question of QUESTIONS) {
+   for (let attempt = 1; attempt <= repeats; attempt++) {
     const draft: Run = {
       id: `ab_${variant}_${randomUUID().slice(0, 6)}`,
       status: "running",
@@ -70,26 +74,35 @@ for (const variant of variants) {
       cost: s.cost,
     });
     process.stdout.write(".");
+   }
   }
 }
 
-console.log("\n");
-console.log("варіант  llm  інстр  read_file  посилання       $   питання");
-for (const r of rows) {
-  console.log(
-    `${r.variant.padEnd(8)} ${String(r.llm).padStart(3)} ${String(r.tools).padStart(6)} ` +
-      `${String(r.reads).padStart(10)} ${(r.cited ? "так" : "—").padStart(10)}  ` +
-      `${r.cost.toFixed(4)}  ${r.question.slice(0, 42)}`,
-  );
+console.log(`\n\n${repeats} прогін(ів) на питання, ${QUESTIONS.length} питань, ${variants.length} варіанти\n`);
+console.log("варіант  питання                                    посилання  читань  $/прогін");
+for (const variant of variants) {
+  for (const question of QUESTIONS) {
+    const own = rows.filter((r) => r.variant === variant && r.question === question);
+    const cited = own.filter((r) => r.cited).length;
+    console.log(
+      `${variant.padEnd(8)} ${question.slice(0, 42).padEnd(42)} ` +
+        `${`${cited}/${own.length}`.padStart(9)} ${avg(own.map((r) => r.reads)).padStart(7)} ` +
+        `  ${avg(own.map((r) => r.cost), 4).padStart(7)}`,
+    );
+  }
 }
 
 console.log("\nпідсумок:");
 for (const variant of variants) {
   const own = rows.filter((r) => r.variant === variant);
-  const noRead = own.filter((r) => r.reads === 0).length;
   console.log(
-    `  ${variant}: ${own.filter((r) => r.cited).length}/${own.length} відповідей із посиланням, ` +
-      `${own.reduce((n, r) => n + r.reads, 0)} читань, ${noRead} без жодного читання, ` +
-      `$${own.reduce((n, r) => n + r.cost, 0).toFixed(4)}`,
+    `  ${variant}: ${own.filter((r) => r.cited).length}/${own.length} із посиланням, ` +
+      `${own.filter((r) => r.reads === 0).length} без жодного читання, ` +
+      `$${own.reduce((n, r) => n + r.cost, 0).toFixed(4)} за все`,
   );
+}
+
+function avg(values: number[], digits = 1): string {
+  if (values.length === 0) return "—";
+  return (values.reduce((a, b) => a + b, 0) / values.length).toFixed(digits);
 }
