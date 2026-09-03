@@ -1,4 +1,8 @@
+import { loadEnv } from "./env";
+
 import Anthropic from "@anthropic-ai/sdk";
+
+loadEnv();
 
 // Ключ не передаємо явно — SDK сам читає process.env.ANTHROPIC_API_KEY.
 const client = new Anthropic();

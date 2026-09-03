@@ -1,3 +1,5 @@
+import { loadEnv } from "../env";
+
 import { randomUUID } from "node:crypto";
 import type { Channel } from "../agent/channel";
 import { advance } from "../agent/loop";
@@ -5,6 +7,8 @@ import { promptOf } from "../agent/prompt";
 import type { Run } from "../agent/types";
 import { buildDeps } from "../deps";
 import { summary } from "../trace/render";
+
+loadEnv();
 
 /**
  * A/B системних промптів на однакових питаннях. Витрачає реальні токени.

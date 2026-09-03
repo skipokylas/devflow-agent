@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { envFile, loadEnv } from "./env";
 import fs from "node:fs/promises";
+import { createInterface } from "node:readline/promises";
 import path from "node:path";
 import { advance, resume, retry, NotRetryable, NotWaiting, type Deps } from "./agent/loop";
 import { buildDeps } from "./deps";
@@ -14,20 +16,23 @@ import { RunNotFound } from "./db/storage";
 import { summary, toHtml, toText } from "./trace/render";
 import type { Run } from "./agent/types";
 
+loadEnv();
+
 const deps = buildDeps();
 const { storage, trace, repo } = deps;
 const traceDir = path.join(stateDir(repo), "traces");
 
 function usage(): void {
   console.log(`Використання:
-  agent run "<задача>"              створити run і працювати до паузи
-  agent reply <runId> "<відповідь>" продовжити run, що чекає на людину
-  agent retry <runId>               повторити перерваний run (failed або обірваний)
-  agent board                       перевірити звʼязок із дошкою: готові квитки
-  agent watch                       планувальник: бере задачі з дошки й веде їх
-  agent list                        усі runs цього репозиторію
-  agent trace <runId>               дерево кроків: що робив і скільки коштувало
-  agent show <runId>                показати стан run
+  devflow run "<задача>"              створити run і працювати до паузи
+  devflow reply <runId> "<відповідь>" продовжити run, що чекає на людину
+  devflow retry <runId>               повторити перерваний run (failed або обірваний)
+  devflow auth                        записати токени в ~/.devflow/.env
+  devflow board                       перевірити звʼязок із дошкою: готові квитки
+  devflow watch                       планувальник: бере задачі з дошки й веде їх
+  devflow list                        усі runs цього репозиторію
+  devflow trace <runId>               дерево кроків: що робив і скільки коштувало
+  devflow show <runId>                показати стан run
 
 Змінні оточення:
   AGENT_LLM=demo   офлайн-модель без мережі й витрат
@@ -107,6 +112,34 @@ async function cmdWatch(): Promise<void> {
 
   console.log(`${repo.id}  опитування раз на ${interval / 1000}с, Ctrl+C щоб зупинити\n`);
   await watch(deps, board, { intervalMs: interval, repo });
+}
+
+/** Записує секрети в ~/.devflow/.env з правами 0600. Наявні значення підставляє як типові. */
+async function cmdAuth(): Promise<void> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const file = envFile();
+
+  const keys = ["ANTHROPIC_API_KEY", "GITHUB_TOKEN"] as const;
+  const values: Record<string, string> = {};
+
+  console.log(`секрети зберігаються в ${file}, спільні для всіх репозиторіїв\n`);
+  for (const key of keys) {
+    const current = process.env[key];
+    const hint = current ? ` [зараз …${current.slice(-6)}, Enter щоб лишити]` : "";
+    const answer = (await rl.question(`${key}${hint}: `)).trim();
+    const value = answer || current;
+    if (value) values[key] = value;
+  }
+  rl.close();
+
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  const body = Object.entries(values)
+    .map(([k, v]) => `${k}=${v}`)
+    .join("\n");
+  await fs.writeFile(file, `${body}\n`, { mode: 0o600 });
+  await fs.chmod(file, 0o600);
+
+  console.log(`\nзаписано ${Object.keys(values).length} значень у ${file}`);
 }
 
 async function cmdBoard(): Promise<void> {
@@ -193,6 +226,9 @@ try {
       break;
     case "retry":
       await cmdRetry(rest);
+      break;
+    case "auth":
+      await cmdAuth();
       break;
     case "board":
       await cmdBoard();

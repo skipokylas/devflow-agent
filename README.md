@@ -12,8 +12,16 @@ TypeScript, голий `@anthropic-ai/sdk`, без агентних фреймв
 
 ```bash
 npm install
-cp .env.example .env      # ANTHROPIC_API_KEY потрібен лише для справжньої моделі
-npm run typecheck
+npm link                  # devflow стає доступним з будь-якої теки
+devflow auth              # токени → ~/.devflow/.env, спільні для всіх репо
+```
+
+Далі працюєш із теки будь-якого проєкту — репозиторій визначається поточною
+текою, як у `git`:
+
+```bash
+cd ~/projects/cal.com
+devflow run "де тут обробляється авторизація?"
 ```
 
 Наскрізний прогін без ключа й без витрат:

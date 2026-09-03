@@ -482,16 +482,22 @@ DECISIONS.md   написаний        → цільове репо/.devflow/, 
 
 ## Команди
 
+Один раз: `npm link` у теці проєкту — і `devflow` доступний звідусіль.
+Репозиторій визначається поточною текою, як у `git`.
+
 ```bash
-npm run typecheck                     # tsc --noEmit
-npm run dev -- run "<задача>"         # створити run і працювати до паузи
-npm run dev -- reply <id> "<текст>"   # продовжити run, що чекає на людину
-npm run dev -- retry <id>             # повторити перерваний run
-npm run dev -- board                  # звʼязок із дошкою: готові квитки
-npm run dev -- watch                  # планувальник: дошка → черга → робота
-npm run dev -- list                   # усі runs цього репозиторію
-npm run dev -- trace <id>             # дерево кроків, час і вартість
-npm run dev -- show <id>              # стан run
+cd ~/projects/будь-що
+devflow auth                # записати токени в ~/.devflow/.env
+devflow run "<задача>"      # створити run і працювати до паузи
+devflow reply <id> "<текст>"
+devflow retry <id>
+devflow board               # звʼязок із дошкою: готові квитки
+devflow watch               # планувальник: дошка → черга → робота
+devflow list                # усі runs цього репозиторію
+devflow trace <id>          # дерево кроків, час і вартість
+devflow show <id>
+
+npm run typecheck           # у теці devflow-agent
 
 npm run try-wire      # справжній HTTP-запит через локальний сервер-підміну
 npm run try-storage   # 14 перевірок FileStorage

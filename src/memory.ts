@@ -1,4 +1,8 @@
+import { loadEnv } from "./env";
+
 import Anthropic from "@anthropic-ai/sdk";
+
+loadEnv();
 
 const client = new Anthropic();
 
