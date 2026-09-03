@@ -8,6 +8,12 @@ import { ticketStatusSchema } from "./board/types";
  * JSON, а не YAML, бо в Node немає вбудованого парсера, а полів вісім.
  */
 export const configSchema = z.object({
+  git: z
+    .object({
+      /** Репо з кількома remote мусить назвати свій явно. */
+      remote: z.string().default("origin"),
+    })
+    .default({ remote: "origin" }),
   board: z
     .object({
       provider: z.literal("github"),

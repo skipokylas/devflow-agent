@@ -59,6 +59,7 @@ for (const variant of variants) {
       pending: null,
       error: null,
       ticket: null,
+      repo: null,
       version: 0,
     };
 

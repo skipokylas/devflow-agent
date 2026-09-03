@@ -9,8 +9,8 @@ import { resolveRepo, stateDir, type RepoRef } from "./repo";
 import { FileSink } from "./trace/sink";
 
 /** Composition root. Єдине місце, де обираються конкретні реалізації портів. */
-export function buildDeps(overrides: Partial<Deps> = {}): Deps & { repo: RepoRef } {
-  const repo = resolveRepo(process.env["AGENT_REPO"] ?? process.cwd());
+export function buildDeps(overrides: Partial<Deps> = {}, remoteName = "origin"): Deps & { repo: RepoRef } {
+  const repo = resolveRepo(process.env["AGENT_REPO"] ?? process.cwd(), remoteName);
   const state = stateDir(repo);
 
   return {

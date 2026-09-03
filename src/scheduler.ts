@@ -5,6 +5,8 @@ import type { Run } from "./agent/types";
 import type { Board } from "./board/board";
 import type { Ticket, TicketRef } from "./board/types";
 import { BoardChannel } from "./channel/board";
+import type { RepoRef } from "./repo";
+import { bindingOf } from "./guard";
 
 export type WatchOptions = {
   intervalMs: number;
@@ -22,18 +24,18 @@ const active = (run: Run): boolean => run.status !== "done" && run.status !== "f
  * Один агент, одна активна робота. Але «чекає на людину» — не робота: щойно run
  * стає waiting_human, планувальник вільний і бере наступний квиток.
  */
-export async function tick(deps: Deps, board: Board, log: (l: string) => void): Promise<void> {
-  await intake(deps, board, log);
+export async function tick(deps: Deps, board: Board, log: (l: string) => void, repo?: RepoRef): Promise<void> {
+  await intake(deps, board, log, repo);
   await collectAnswers(deps, board, log);
   await advanceNext(deps, board, log);
 }
 
-export async function watch(deps: Deps, board: Board, opts: WatchOptions): Promise<void> {
+export async function watch(deps: Deps, board: Board, opts: WatchOptions & { repo?: RepoRef }): Promise<void> {
   const log = opts.log ?? ((l: string) => console.log(l));
   await recover(deps, log);
 
   for (;;) {
-    await tick(deps, board, log);
+    await tick(deps, board, log, opts.repo);
     if (opts.once) return;
     await new Promise((r) => setTimeout(r, opts.intervalMs));
   }
@@ -49,14 +51,14 @@ export async function recover(deps: Deps, log: (l: string) => void): Promise<voi
 }
 
 /** Нові квитки зі списку готових стають runs. Дублі відсікаються за ticket ref. */
-async function intake(deps: Deps, board: Board, log: (l: string) => void): Promise<void> {
+async function intake(deps: Deps, board: Board, log: (l: string) => void, repo?: RepoRef): Promise<void> {
   const runs = await deps.storage.list();
 
   for (const ticket of await board.ready()) {
     const known = runs.some((r) => r.ticket && same(r.ticket, ticket.ref) && active(r));
     if (known) continue;
 
-    await deps.storage.create(runFor(ticket));
+    await deps.storage.create(runFor(ticket, repo));
     await board.setStatus(ticket.ref, "in_progress");
     log(`взято ${ticket.ref.externalId}: ${ticket.title}`);
   }
@@ -109,7 +111,7 @@ function withChannel(deps: Deps, board: Board, run: Run): Deps {
   return run.ticket ? { ...deps, channel: new BoardChannel(board, run.ticket) } : deps;
 }
 
-function runFor(ticket: Ticket): Run {
+function runFor(ticket: Ticket, repo?: RepoRef): Run {
   return {
     id: `run_${randomUUID().slice(0, 8)}`,
     status: "queued",
@@ -125,6 +127,7 @@ function runFor(ticket: Ticket): Run {
     pending: null,
     error: null,
     ticket: ticket.ref,
+    repo: repo ? bindingOf(repo) : null,
     version: 0,
   };
 }

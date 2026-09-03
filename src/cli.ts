@@ -4,6 +4,7 @@ import path from "node:path";
 import { advance, resume, retry, NotRetryable, NotWaiting, type Deps } from "./agent/loop";
 import { buildDeps } from "./deps";
 import { stateDir } from "./repo";
+import { assertBoardMatchesRemote, assertRunBelongs, bindingOf, RepoMismatch } from "./guard";
 import { InMemoryBoard } from "./board/memory";
 import { GitHubBoard } from "./board/github/board";
 import type { Board } from "./board/board";
@@ -46,6 +47,7 @@ function newRun(task: string): Run {
     pending: null,
     error: null,
     ticket: null,
+    repo: bindingOf(repo),
     version: 0,
   };
 }
@@ -65,6 +67,7 @@ async function cmdReply(args: string[]): Promise<void> {
   const [id, answer] = args;
   if (!id || !answer) throw new Error(`потрібні id і відповідь: agent reply <runId> "<відповідь>"`);
 
+  assertRunBelongs(await storage.load(id), repo);
   const finished = await resume(id, answer, deps);
   console.log(`\n${finished.id} → ${finished.status}`);
 }
@@ -73,6 +76,7 @@ async function cmdRetry(args: string[]): Promise<void> {
   const id = args[0];
   if (!id) throw new Error("потрібен id: agent retry <runId>");
 
+  assertRunBelongs(await storage.load(id), repo);
   const finished = await retry(id, deps);
   console.log(`\n${finished.id} → ${finished.status}`);
 }
@@ -83,6 +87,9 @@ async function buildBoard(): Promise<Board> {
 
   if (!config.board) throw new Error("немає .devflow/config.json з секцією board");
   if (!token) throw new Error("немає GITHUB_TOKEN у .env");
+
+  // Fail closed: дошка одного хоста при remote на інший — відмова, не здогад.
+  assertBoardMatchesRemote(config, repo);
 
   return new GitHubBoard({
     token,
@@ -99,7 +106,7 @@ async function cmdWatch(): Promise<void> {
   const interval = Number(process.env["WATCH_INTERVAL"] ?? 30) * 1000;
 
   console.log(`${repo.id}  опитування раз на ${interval / 1000}с, Ctrl+C щоб зупинити\n`);
-  await watch(deps, board, { intervalMs: interval });
+  await watch(deps, board, { intervalMs: interval, repo });
 }
 
 async function cmdBoard(): Promise<void> {
@@ -132,6 +139,7 @@ async function cmdList(): Promise<void> {
         `${task.replace(/\s+/g, " ").slice(0, 46)}`,
     );
     if (run.pending) console.log(`${" ".repeat(14)}чекає: ${run.pending.question.slice(0, 60)}`);
+    if (run.repo && run.repo.id !== repo.id) console.log(`${" ".repeat(14)}чуже репо: ${run.repo.id}`);
   }
 }
 
@@ -206,7 +214,8 @@ try {
       process.exit(1);
   }
 } catch (err) {
-  if (err instanceof RunNotFound || err instanceof NotWaiting || err instanceof NotRetryable) console.error(`помилка: ${err.message}`);
+  if (err instanceof RepoMismatch) console.error(`помилка звірки: ${err.message}`);
+  else if (err instanceof RunNotFound || err instanceof NotWaiting || err instanceof NotRetryable) console.error(`помилка: ${err.message}`);
   else if (err instanceof Error) console.error(`помилка: ${err.message}`);
   else throw err;
   process.exit(1);

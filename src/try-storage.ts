@@ -29,6 +29,7 @@ const draft: Run = {
   pending: null,
   error: null,
   ticket: null,
+  repo: null,
   version: 0,
 };
 

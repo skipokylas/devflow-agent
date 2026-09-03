@@ -30,6 +30,12 @@ export const runSchema = z.object({
   error: z.string().nullable().default(null),
   /** Квиток, з якого виросла задача. Історія по квитку — це всі runs із цим ref. */
   ticket: ticketRefSchema.nullable().default(null),
+  /**
+   * Репозиторій, у якому створено run. Поки стан лежить у теці на кожне репо,
+   * розділення тримається на структурі файлів; після переходу на спільну базу
+   * ця гарантія зникне, тому привʼязка потрібна раніше за базу.
+   */
+  repo: z.object({ id: z.string(), remote: z.string().nullable() }).nullable().default(null),
   version: z.number().int().nonnegative(),
 });
 

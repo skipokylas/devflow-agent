@@ -31,7 +31,7 @@ function deps(llm: Deps["llm"], channel = new SilentChannel(), maxSteps = 8): De
 }
 
 const draft = (id: string): Run => ({
-  id, status: "running", pending: null, error: null, ticket: null, version: 0,
+  id, status: "running", pending: null, error: null, ticket: null, repo: null, version: 0,
   messages: [{ role: "user", content: "задача" }],
 });
 
