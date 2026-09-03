@@ -12,9 +12,11 @@ export class BoardChannel implements Channel {
   constructor(
     private readonly board: Board,
     private readonly ref: TicketRef,
+    private readonly log: (line: string) => void = (l) => console.log(l),
   ) {}
 
   async ask(run: Run, q: Question): Promise<void> {
+    this.log(`  ? ${q.question}`);
     const options = q.options.length
       ? `\n\n${q.options.map((o, i) => `${i + 1}. ${o}`).join("\n")}`
       : "";
@@ -24,7 +26,8 @@ export class BoardChannel implements Channel {
     );
   }
 
-  async notify(): Promise<void> {
-    // Мовчить навмисно: у квитку має бути розмова, а не трасування.
+  /** У квиток іде розмова, у термінал — покрокові дії. Інакше квиток стане логом. */
+  async notify(_run: Run, text: string): Promise<void> {
+    this.log(text);
   }
 }
