@@ -36,7 +36,12 @@ export class LiveChannel implements Channel {
     await this.inner.ask(run, q);
   }
 
+  /**
+   * Будь-який сторонній друк закриває живий блок: інакше наступне
+   * перемальовування підіймає курсор поверх чужих рядків і дублює шапку.
+   */
   async notify(run: Run, text: string): Promise<void> {
+    this.flush();
     await this.inner.notify(run, text);
   }
 

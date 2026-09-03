@@ -94,7 +94,9 @@ async function collectAnswers(
     if (!run.ticket) continue;
     if (run.status !== "waiting_human" && run.status !== "done") continue;
 
-    const since = run.lastCommentAt ?? run.pending?.askedAt ?? "";
+    // Порожній since взагалі неприпустимий: він означає «уся історія».
+    const since = run.lastCommentAt ?? run.pending?.askedAt ?? null;
+    if (!since) continue;
     const answer = (await board.commentsSince(run.ticket, since)).find((c) => !c.mine);
     if (!answer) continue;
 
@@ -153,7 +155,11 @@ async function finish(
   const next = column[run.status];
   if (next) await board.setStatus(run.ticket, next);
 
-  await publishReport(deps, board, run);
+  // Мітка «зараз»: доопрацюванням вважаються лише коментарі ПІСЛЯ звіту.
+  // Без неї since=="" означало б «уся історія», і будь-який давній коментар —
+  // хоч від людини, хоч від іншого бота — запускав би роботу заново.
+  const stamped = await deps.storage.save({ ...run, lastCommentAt: new Date().toISOString() });
+  await publishReport(deps, board, stamped);
   log(`${run.id} → ${run.status}`);
 }
 

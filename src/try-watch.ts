@@ -124,6 +124,25 @@ check("у звіті видно текст уточнення", updated.includes
   check("з finishStatus done картка їде в done", (await board2.get(ref("9"))).status === "done");
 }
 
+// 3d. давній коментар, що існував до роботи агента, не запускає доопрацювання
+{
+  const board3 = new InMemoryBoard([ticket("7", "задача з історією")]);
+  board3.reply(ref("7"), "коментар, написаний до того, як агент узявся за квиток");
+
+  const storage3 = new FileStorage(`${dir}/runs3`);
+  const deps3 = { ...deps, storage: storage3 };
+
+  await tick(deps3, board3, log);           // взяв і дійшов до паузи
+  const parked = (await storage3.list())[0];
+  if (parked) await storage3.save({ ...parked, status: "done", pending: null });
+
+  const before = (await storage3.load(parked?.id ?? "")).messages.length;
+  await tick(deps3, board3, log);           // не має нічого переробляти
+  const after = (await storage3.load(parked?.id ?? "")).messages.length;
+
+  check("давній коментар не запускає доопрацювання", after === before, `${before} → ${after}`);
+}
+
 // 4. відновлення після простою
 const second = (await storage.list()).find((r) => r.status === "waiting_human");
 await storage.save({ ...(second as NonNullable<typeof second>), status: "running" });
