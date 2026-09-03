@@ -15,12 +15,28 @@ const ctx: ToolContext = { runId: "run_test", root: process.cwd(), approvedActio
 const defs = defaultTools.definitions();
 console.log("\nоголошення, які підуть у запит:");
 console.log(JSON.stringify(defs, null, 2).slice(0, 700), "…\n");
-check("два інструменти в реєстрі", defs.length === 2);
-check("у схеми є required", Array.isArray(defs[1]?.input_schema["required"]));
+check("три інструменти в реєстрі", defs.length === 3);
+check("у схеми є required", Array.isArray(defs[2]?.input_schema["required"]));
 
 // 2. Реальний виклик
 const content = await defaultTools.execute("read_file", { path: "package.json" }, ctx);
 check("read_file повернув вміст", content.includes("devflow-agent"));
+
+// 2a. list_files бачить структуру і пропускає службові теки
+const tree = await defaultTools.execute("list_files", { path: "src", depth: 2 }, ctx);
+check("list_files знайшов agent/", tree.includes("agent/"));
+check("list_files знайшов вкладений файл", tree.includes("loop.ts"));
+const root = await defaultTools.execute("list_files", {}, ctx);
+check("list_files пропускає node_modules", !root.includes("node_modules"));
+check("list_files працює з кореня без аргументів", root.includes("package.json"));
+
+let outside = false;
+try {
+  await defaultTools.execute("list_files", { path: "../.." }, ctx);
+} catch {
+  outside = true;
+}
+check("list_files за межі кореня → відмова", outside);
 
 // 3. Модель надіслала кривий аргумент
 let zodErr = false;

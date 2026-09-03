@@ -353,7 +353,7 @@ npm run dev -- show <id>              # стан run
 
 npm run try-wire      # справжній HTTP-запит через локальний сервер-підміну
 npm run try-storage   # 11 перевірок FileStorage
-npm run try-tools     # 9 перевірок реєстру інструментів
+npm run try-tools     # 14 перевірок реєстру інструментів
 npm run try-llm       # 7 перевірок підробленої моделі
 npm run try-loop      # 18 перевірок циклу
 ```

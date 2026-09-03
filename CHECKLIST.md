@@ -5,7 +5,7 @@
 ```
 src/agent/types.ts    runSchema (zod) → Run, Pending; поле error
 src/agent/llm.ts      Llm, realLlm, scriptedLlm, demoLlm, fake*
-src/agent/tools.ts    ToolRegistry, ask_human, read_file, access
+src/agent/tools.ts    ToolRegistry, ask_human, list_files, read_file, access
 src/agent/loop.ts     advance() / resume() / retry()
 src/agent/channel.ts  Channel (порт) + src/channel/cli.ts
 src/db/storage.ts     Storage, FileStorage (create/load/save, version)
@@ -183,9 +183,12 @@ Channel   ──►  CliChannel           друк у stdout        (ще не �
 - [ ] `npm run memory` — на друге питання відповідає правильно, `input_tokens` другого виклику більший за перший
 - [ ] порівняй вартість: той самий `ping` з `claude-haiku-4-5` замість `claude-opus-5`
 
-### F. Реєстр інструментів — `npm run try-tools` (9 перевірок)
+### F. Реєстр інструментів — `npm run try-tools` (14 перевірок)
 
 - [ ] `read_file` повертає справжній вміст
+- [ ] `list_files` показує дерево й пропускає `node_modules`
+- [ ] `list_files` без аргументів працює з кореня
+- [ ] `list_files` за межі кореня → відмова
 - [ ] невалідний `input` від моделі ловить zod
 - [ ] шлях `../../.ssh/id_rsa` відбито
 - [ ] невідома назва → `UnknownTool`

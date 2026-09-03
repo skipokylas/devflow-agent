@@ -80,6 +80,21 @@ export class ToolRegistry {
 
 // ─────────────────────────── самі інструменти ───────────────────────────
 
+/** Не дає файловим інструментам вийти за межі проєкту. Сам корінь дозволений. */
+function resolveInRoot(ctx: ToolContext, rel: string): string {
+  const root = path.resolve(ctx.root);
+  const target = path.resolve(root, rel);
+  if (target !== root && !target.startsWith(root + path.sep)) {
+    throw new Error(`шлях за межами проєкту: ${rel}`);
+  }
+  return target;
+}
+
+/** Теки, які роздують контекст і нічого не пояснюють про проєкт. */
+const IGNORED = new Set([
+  "node_modules", ".git", ".runs", "dist", "build", "coverage", ".next", ".turbo",
+]);
+
 export const askHuman = defineTool({
   name: ASK_HUMAN,
   description:
@@ -103,14 +118,46 @@ export const readFile = defineTool({
     path: z.string().describe("Наприклад: src/agent/loop.ts"),
   }),
   execute: async ({ path: rel }, ctx) => {
-    const target = path.resolve(ctx.root, rel);
-    if (!target.startsWith(path.resolve(ctx.root) + path.sep)) {
-      throw new Error(`шлях за межами проєкту: ${rel}`);
-    }
-    const text = await fs.readFile(target, "utf8");
+    const text = await fs.readFile(resolveInRoot(ctx, rel), "utf8");
     const limit = 20_000;
     return text.length > limit ? `${text.slice(0, limit)}\n…(обрізано)` : text;
   },
 });
 
-export const defaultTools = new ToolRegistry([askHuman, readFile]);
+export const listFiles = defineTool({
+  name: "list_files",
+  description:
+    "Перелічити вміст теки деревом. Службові теки (node_modules, .git, dist) пропускаються. " +
+    "Використовуй, щоб зорієнтуватись у структурі, перш ніж читати файли.",
+  access: "read",
+  input: z.object({
+    path: z.string().default(".").describe("Тека відносно кореня; типово корінь проєкту"),
+    depth: z.number().int().min(1).max(5).default(3).describe("Глибина вкладеності"),
+  }),
+  execute: async ({ path: rel, depth }, ctx) => {
+    const root = resolveInRoot(ctx, rel);
+    const lines: string[] = [];
+    const limit = 400;
+
+    async function walk(dir: string, prefix: string, left: number): Promise<void> {
+      if (left === 0 || lines.length >= limit) return;
+      const entries = (await fs.readdir(dir, { withFileTypes: true }))
+        .filter((e) => !IGNORED.has(e.name))
+        .sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name));
+
+      for (const entry of entries) {
+        if (lines.length >= limit) {
+          lines.push(`${prefix}…(обрізано на ${limit} записах)`);
+          return;
+        }
+        lines.push(`${prefix}${entry.name}${entry.isDirectory() ? "/" : ""}`);
+        if (entry.isDirectory()) await walk(path.join(dir, entry.name), `${prefix}  `, left - 1);
+      }
+    }
+
+    await walk(root, "", depth);
+    return lines.length ? lines.join("\n") : "(порожня тека)";
+  },
+});
+
+export const defaultTools = new ToolRegistry([askHuman, listFiles, readFile]);
