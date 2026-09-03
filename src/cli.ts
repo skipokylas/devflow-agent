@@ -20,6 +20,47 @@ import { newRun } from "./agent/run";
 
 loadEnv();
 
+/**
+ * Дозволяє писати змінні після команди: `devflow tick MODEL=claude-haiku-4-5`.
+ * Оболонка так не вміє — префікс має стояти першим, — тому розбираємо самі.
+ * Перелік закритий: одрук у назві має бути помилкою, а не тихо проігнорованим.
+ */
+const KNOWN_VARS = [
+  "MODEL",
+  "MAX_STEPS",
+  "AGENT_LLM",
+  "AGENT_PROMPT",
+  "AGENT_REPO",
+  "AGENT_BOARD",
+  "AGENT_STATE_DIR",
+  "WATCH_INTERVAL",
+  "GITHUB_TOKEN",
+  "ANTHROPIC_API_KEY",
+];
+
+function takeEnvArgs(argv: string[]): string[] {
+  const rest: string[] = [];
+
+  for (const arg of argv) {
+    const match = /^([A-Z][A-Z0-9_]*)=(.*)$/.exec(arg);
+    if (!match) {
+      rest.push(arg);
+      continue;
+    }
+
+    const [, name, value] = match;
+    if (!name || !KNOWN_VARS.includes(name)) {
+      console.error(`помилка: невідома змінна ${name}; є: ${KNOWN_VARS.join(", ")}`);
+      process.exit(1);
+    }
+    process.env[name] = value;
+  }
+
+  return rest;
+}
+
+const argv = takeEnvArgs(process.argv.slice(2));
+
 const deps = buildDeps({ channel: new LiveChannel(new CliChannel()) });
 const { storage, trace, repo } = deps;
 const traceDir = path.join(stateDir(repo), "traces");
@@ -38,7 +79,7 @@ function usage(): void {
   devflow trace <runId>               дерево кроків: що робив і скільки коштувало
   devflow show <runId>                показати стан run
 
-Змінні оточення:
+Змінні — префіксом або після команди: devflow tick MODEL=claude-haiku-4-5
   AGENT_LLM=demo   офлайн-модель без мережі й витрат
   AGENT_PROMPT=v1  варіант системного промпта (типово v4)
   AGENT_REPO=path  репозиторій, з яким працюємо (типово поточна тека)
@@ -212,7 +253,7 @@ async function cmdShow(args: string[]): Promise<void> {
   }
 }
 
-const [command, ...rest] = process.argv.slice(2);
+const [command, ...rest] = argv;
 
 try {
   switch (command) {
