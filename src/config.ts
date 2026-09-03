@@ -25,6 +25,12 @@ export const configSchema = z.object({
       /** Кому належить проєкт і чи це організація. */
       owner: z.string().min(1),
       ownerType: z.enum(["user", "organization"]).default("user"),
+      /**
+       * Куди їде картка, коли агент завершив. Типово in_review: «готово» —
+       * рішення людини, і поки картка на очах, її легко відправити на
+       * доопрацювання коментарем.
+       */
+      finishStatus: z.enum(["in_review", "done"]).default("in_review"),
       /** Назви колонок поля Status у Projects v2. */
       statuses: z.record(ticketStatusSchema, z.string()).default({
         todo: "Ready",

@@ -3,12 +3,15 @@ import { newRun } from "./agent/run";
 import { untrusted } from "./agent/tools";
 import type { Run } from "./agent/types";
 import type { Board } from "./board/board";
-import type { Ticket, TicketRef } from "./board/types";
+import type { Ticket, TicketRef, TicketStatus } from "./board/types";
 import { BoardChannel } from "./channel/board";
 import { renderReport } from "./report";
 import { LiveChannel } from "./channel/live";
 import type { RepoRef } from "./repo";
 import { bindingOf } from "./guard";
+
+/** Куди переводити картку після успішного завершення. */
+export type SchedulerOptions = { finishStatus?: "in_review" | "done" };
 
 export type WatchOptions = {
   intervalMs: number;
@@ -26,18 +29,28 @@ const active = (run: Run): boolean => run.status !== "done" && run.status !== "f
  * Один агент, одна активна робота. Але «чекає на людину» — не робота: щойно run
  * стає waiting_human, планувальник вільний і бере наступний квиток.
  */
-export async function tick(deps: Deps, board: Board, log: (l: string) => void, repo?: RepoRef): Promise<void> {
+export async function tick(
+  deps: Deps,
+  board: Board,
+  log: (l: string) => void,
+  repo?: RepoRef,
+  finishStatus: TicketStatus = "in_review",
+): Promise<void> {
   await intake(deps, board, log, repo);
-  await collectAnswers(deps, board, log);
-  await advanceNext(deps, board, log);
+  await collectAnswers(deps, board, log, finishStatus);
+  await advanceNext(deps, board, log, finishStatus);
 }
 
-export async function watch(deps: Deps, board: Board, opts: WatchOptions & { repo?: RepoRef }): Promise<void> {
+export async function watch(
+  deps: Deps,
+  board: Board,
+  opts: WatchOptions & { repo?: RepoRef; finishStatus?: TicketStatus },
+): Promise<void> {
   const log = opts.log ?? ((l: string) => console.log(l));
   await recover(deps, log);
 
   for (;;) {
-    await tick(deps, board, log, opts.repo);
+    await tick(deps, board, log, opts.repo, opts.finishStatus);
     if (opts.once) return;
     await new Promise((r) => setTimeout(r, opts.intervalMs));
   }
@@ -71,7 +84,12 @@ async function intake(deps: Deps, board: Board, log: (l: string) => void, repo?:
  * і доопрацювання вже завершеної задачі. Різниця лише в тому, як текст лягає
  * в історію: як tool_result чи як нове user-повідомлення.
  */
-async function collectAnswers(deps: Deps, board: Board, log: (l: string) => void): Promise<void> {
+async function collectAnswers(
+  deps: Deps,
+  board: Board,
+  log: (l: string) => void,
+  finishStatus: TicketStatus,
+): Promise<void> {
   for (const run of await deps.storage.list()) {
     if (!run.ticket) continue;
     if (run.status !== "waiting_human" && run.status !== "done") continue;
@@ -85,7 +103,7 @@ async function collectAnswers(deps: Deps, board: Board, log: (l: string) => void
 
     if (seen.status === "waiting_human") {
       log(`відповідь на ${seen.id}: ${answer.body.slice(0, 60)}`);
-      await finish(deps, board, await resume(seen.id, answer.body, withChannel(deps, board, seen)), log);
+      await finish(deps, board, await resume(seen.id, answer.body, withChannel(deps, board, seen)), log, finishStatus);
       continue;
     }
 
@@ -96,12 +114,17 @@ async function collectAnswers(deps: Deps, board: Board, log: (l: string) => void
       status: "queued",
       messages: [...seen.messages, { role: "user", content: answer.body }],
     });
-    await finish(deps, board, await advance(reopened, withChannel(deps, board, reopened)), log);
+    await finish(deps, board, await advance(reopened, withChannel(deps, board, reopened)), log, finishStatus);
   }
 }
 
 /** Одна активна робота: якщо щось уже крутиться — цей оберт нічого не починає. */
-async function advanceNext(deps: Deps, board: Board, log: (l: string) => void): Promise<void> {
+async function advanceNext(
+  deps: Deps,
+  board: Board,
+  log: (l: string) => void,
+  finishStatus: TicketStatus,
+): Promise<void> {
   const runs = await deps.storage.list();
   if (runs.some((r) => r.status === "running")) return;
 
@@ -110,14 +133,24 @@ async function advanceNext(deps: Deps, board: Board, log: (l: string) => void): 
 
   log(`працюю над ${next.id}`);
   const started = await deps.storage.save({ ...next, status: "running" });
-  await finish(deps, board, await advance(started, withChannel(deps, board, next)), log);
+  await finish(deps, board, await advance(started, withChannel(deps, board, next)), log, finishStatus);
 }
 
-async function finish(deps: Deps, board: Board, run: Run, log: (l: string) => void): Promise<void> {
+async function finish(
+  deps: Deps,
+  board: Board,
+  run: Run,
+  log: (l: string) => void,
+  finishStatus: TicketStatus = "in_review",
+): Promise<void> {
   if (!run.ticket) return;
 
-  const column = { done: "done", failed: "blocked", waiting_human: "blocked" } as const;
-  const next = column[run.status as keyof typeof column];
+  const column: Partial<Record<Run["status"], TicketStatus>> = {
+    done: finishStatus,
+    failed: "blocked",
+    waiting_human: "blocked",
+  };
+  const next = column[run.status];
   if (next) await board.setStatus(run.ticket, next);
 
   await publishReport(deps, board, run);

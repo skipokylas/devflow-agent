@@ -11,6 +11,7 @@
       "in_review": "In review",
       "blocked": "Blocked",
       "done": "Done"
-    }
+    },
+    "finishStatus": "in_review"
   }
 }

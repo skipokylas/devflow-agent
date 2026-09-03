@@ -141,8 +141,9 @@ async function buildBoard(): Promise<Board> {
 /** Один оберт і вихід: для ручного контролю або cron замість постійного процесу. */
 async function cmdTick(): Promise<void> {
   const board = process.env["AGENT_BOARD"] === "memory" ? new InMemoryBoard() : await buildBoard();
+  const config = await loadConfig(repo.root, repo.id);
   await recover(deps, (line) => console.log(line));
-  await tick(deps, board, (line) => console.log(line), repo);
+  await tick(deps, board, (line) => console.log(line), repo, config.board?.finishStatus);
 }
 
 async function cmdWatch(): Promise<void> {
@@ -150,7 +151,8 @@ async function cmdWatch(): Promise<void> {
   const interval = Number(process.env["WATCH_INTERVAL"] ?? 30) * 1000;
 
   console.log(`${repo.id}  опитування раз на ${interval / 1000}с, Ctrl+C щоб зупинити\n`);
-  await watch(deps, board, { intervalMs: interval, repo });
+  const config = await loadConfig(repo.root, repo.id);
+  await watch(deps, board, { intervalMs: interval, repo, finishStatus: config.board?.finishStatus });
 }
 
 /** Записує секрети в ~/.devflow/.env з правами 0600. Наявні значення підставляє як типові. */

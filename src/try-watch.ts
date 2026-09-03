@@ -75,7 +75,7 @@ await tick(deps, board, log);
 
 const afterAnswer = await storage.load(first?.id ?? "");
 check("відповідь із коментаря продовжила run", afterAnswer.status === "done");
-check("квиток переведений у done", (await board.get(ref("1"))).status === "done");
+check("квиток переведений у in_review, не done", (await board.get(ref("1"))).status === "in_review");
 
 const thread = await board.commentsSince(ref("1"), new Date(0).toISOString());
 check("агент писав у квиток", thread.some((c) => c.mine && c.body.includes("Потрібна відповідь")));
@@ -110,6 +110,19 @@ const updated = (await board.commentsSince(ref("1"), new Date(0).toISOString()))
   .find((c) => c.id === reworked.report?.commentId)?.body ?? "";
 check("у звіті зʼявилось уточнення", updated.includes("Уточнення від тебе"));
 check("у звіті видно текст уточнення", updated.includes("застарілі токени"));
+
+// 3c. finishStatus налаштовується
+{
+  const board2 = new InMemoryBoard([ticket("9", "інша задача")]);
+  const storage2 = new FileStorage(`${dir}/runs2`);
+  const deps2 = { ...deps, storage: storage2 };
+  await tick(deps2, board2, log, undefined, "done");
+  const run9 = (await storage2.list())[0];
+  if (run9) await storage2.save({ ...run9, status: "waiting_human" });
+  board2.reply(ref("9"), "так");
+  await tick(deps2, board2, log, undefined, "done");
+  check("з finishStatus done картка їде в done", (await board2.get(ref("9"))).status === "done");
+}
 
 // 4. відновлення після простою
 const second = (await storage.list()).find((r) => r.status === "waiting_human");
