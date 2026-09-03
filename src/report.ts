@@ -9,7 +9,14 @@ import { priceOf, type Span } from "./trace/types";
  * уточнення людини, доопрацювання.
  */
 
-type Block = { type: string; text?: string; name?: string; input?: unknown; content?: unknown; is_error?: boolean };
+type Block = {
+  type: string;
+  text?: string;
+  name?: string;
+  input?: unknown;
+  content?: unknown;
+  is_error?: boolean;
+};
 
 const blocksOf = (content: Anthropic.MessageParam["content"]): Block[] =>
   typeof content === "string" ? [{ type: "text", text: content }] : (content as Block[]);
@@ -22,11 +29,11 @@ const textOf = (blocks: Block[]): string =>
     .trim();
 
 const STATUS: Record<Run["status"], string> = {
-  queued: "у черзі",
-  running: "виконується",
-  waiting_human: "чекає на відповідь",
-  done: "готово",
-  failed: "зупинився",
+  queued: "⏳ у черзі",
+  running: "⏳ виконується",
+  waiting_human: "⏸ чекає на відповідь",
+  done: "✅ готово",
+  failed: "⚠️ зупинився",
 };
 
 const quote = (text: string): string =>
@@ -38,87 +45,96 @@ const quote = (text: string): string =>
     .join("\n")
     .replace(/(^(> \n)+|(> \n)+$)/g, "");
 
-/** 1 виклик, 2 виклики, 5 викликів. */
-const plural = (n: number, one: string, few: string, many: string): string => {
+/** 1 звернення, 2 звернення, 5 звернень. */
+function plural(n: number, one: string, few: string, many: string): string {
   const mod100 = n % 100;
   const mod10 = n % 10;
   if (mod100 >= 11 && mod100 <= 14) return `${n} ${many}`;
   if (mod10 === 1) return `${n} ${one}`;
   if (mod10 >= 2 && mod10 <= 4) return `${n} ${few}`;
   return `${n} ${many}`;
-};
+}
 
-const short = (input: unknown): string => {
-  const text = typeof input === "string" ? input : JSON.stringify(input);
-  return (text ?? "").replace(/\s+/g, " ").slice(0, 70);
-};
+/** Заголовки моделі опускаємо на рівень нижче, щоб вони не перебивали наш. */
+const demote = (text: string): string => text.replace(/^(#{1,4}) /gm, "#$1 ");
+
+/** Виклик як команда, а не як JSON: `read_file src/agent/loop.ts`. */
+function call(block: Block): string {
+  const input = block.input;
+  if (input && typeof input === "object") {
+    const record = input as Record<string, unknown>;
+    const path = record["path"];
+    if (typeof path === "string") {
+      const depth = record["depth"];
+      return `\`${block.name} ${path}${typeof depth === "number" ? ` -d${depth}` : ""}\``;
+    }
+    const pairs = Object.entries(record)
+      .map(([k, v]) => `${k}=${String(v).slice(0, 24)}`)
+      .join(" ");
+    return `\`${block.name}${pairs ? ` ${pairs}` : ""}\``;
+  }
+  return `\`${block.name}\``;
+}
 
 export function renderReport(run: Run, spans: Span[]): string {
   const s = spans.length ? summary(spans) : null;
-  const out: string[] = [`<!-- devflow report:${run.id} -->`, `### devflow · \`${run.id}\` · ${STATUS[run.status]}`, ""];
+  const out: string[] = [
+    `<!-- devflow report:${run.id} -->`,
+    `### devflow · ${STATUS[run.status]}`,
+    "",
+  ];
 
-  let iteration = 0;
-  let pendingTools: string[] = [];
-
-  const flushTools = (): void => {
-    if (pendingTools.length === 0) return;
-    out.push(`<details><summary>${plural(pendingTools.length, "виклик інструмента", "виклики інструментів", "викликів інструментів")}</summary>`, "");
-    out.push(...pendingTools.map((t) => `- ${t}`), "", "</details>", "");
-    pendingTools = [];
-  };
+  let iteration = 1;
 
   for (const [i, message] of run.messages.entries()) {
     const blocks = blocksOf(message.content);
 
     if (message.role === "user") {
-      const results = blocks.filter((b) => b.type === "tool_result");
       const text = textOf(blocks);
-
-      // Відповідь людини приходить як tool_result на ask_human — його треба показати.
-      const human = results.find((b) => typeof b.content === "string" && !b.is_error && b.content.length < 400);
+      const answer = blocks.find(
+        (b) => b.type === "tool_result" && !b.is_error && typeof b.content === "string" && b.content.length < 400,
+      );
 
       if (i === 0 && text) {
-        out.push("**Задача**", "", quote(text.replace(/<\/?untrusted[^>]*>/g, "").trim()), "");
+        out.push(quote(text.replace(/<\/?untrusted[^>]*>/g, "").trim()), "");
       } else if (text) {
         iteration++;
-        flushTools();
-        out.push("", `**Уточнення від тебе**`, "", quote(text), "");
-      } else if (human && run.pending === null) {
-        flushTools();
-        out.push("", `**Твоя відповідь**`, "", quote(String(human.content)), "");
+        out.push("", "---", "", "**Уточнення**", "", quote(text), "");
+      } else if (answer && run.pending === null) {
+        out.push(`**Відповідь:** ${String(answer.content).replace(/\s+/g, " ").trim()}`, "");
       }
       continue;
     }
 
-    for (const block of blocks) {
-      if (block.type === "tool_use" && block.name === "ask_human") {
-        const input = block.input as { question?: string; options?: string[] };
-        flushTools();
-        out.push("", `**Питання:** ${input.question ?? ""}`, "");
-        for (const [n, option] of (input.options ?? []).entries()) out.push(`${n + 1}. ${option}`);
-        out.push("");
-      } else if (block.type === "tool_use") {
-        pendingTools.push(`\`${block.name}\` ${short(block.input)}`);
-      } else if (block.type === "text" && block.text?.trim()) {
-        flushTools();
-        out.push("", block.text.trim(), "");
-      }
+    // Виклики однієї відповіді — одним рядком одразу під фразою агента.
+    const narration = textOf(blocks);
+    const asks = blocks.filter((b) => b.type === "tool_use" && b.name === "ask_human");
+    const tools = blocks.filter((b) => b.type === "tool_use" && b.name !== "ask_human");
+
+    if (narration) out.push(demote(narration), "");
+    if (tools.length > 0) out.push(`<sub>${tools.map(call).join(" · ")}</sub>`, "");
+
+    for (const ask of asks) {
+      const input = ask.input as { question?: string; options?: string[] };
+      out.push(`**Питання:** ${input.question ?? ""}`, "");
+      for (const [n, option] of (input.options ?? []).entries()) out.push(`${n + 1}. ${option}`);
+      if ((input.options ?? []).length > 0) out.push("");
     }
   }
-  flushTools();
 
-  if (run.error) out.push("", `**Помилка:** ${run.error}`, "");
+  if (run.error) out.push("", `**Помилка:** \`${run.error}\``, "");
 
   if (s) {
     const seconds = (s.durationMs / 1000).toFixed(1);
+    const tokens = `${s.inputTokens.toLocaleString("uk")}→${s.outputTokens.toLocaleString("uk")}`;
     out.push(
       "",
       "---",
-      `${s.llmCalls} звернень до моделі · ${s.toolCalls} викликів інструментів · ` +
-        `${s.inputTokens}→${s.outputTokens} токенів · $${s.cost.toFixed(4)} · ${seconds}s` +
-        (iteration ? ` · ітерацій: ${iteration + 1}` : ""),
-      "",
-      `<sub>деталі: \`devflow trace ${run.id}\`</sub>`,
+      `<sub>${plural(s.llmCalls, "звернення", "звернення", "звернень")} · ` +
+        `${plural(s.toolCalls, "виклик", "виклики", "викликів")} інструментів · ${tokens} токенів · ` +
+        `<b>$${s.cost.toFixed(4)}</b> · ${seconds}s` +
+        (iteration > 1 ? ` · ${plural(iteration, "ітерація", "ітерації", "ітерацій")}` : "") +
+        ` · <code>devflow trace ${run.id}</code></sub>`,
     );
   }
 

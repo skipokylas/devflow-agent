@@ -90,10 +90,10 @@ check("звіт один, не низка коментарів", mine.filter((c)
   `${mine.length} своїх коментарів`);
 
 const body = mine.find((c) => c.body.includes("### devflow"))?.body ?? "";
-check("у звіті є задача", body.includes("**Задача**"));
+check("у звіті є текст задачі", body.includes("> Задача з квитка 1: додай magic links"));
 check("у звіті є питання агента", body.includes("**Питання:**"));
 check("у звіті є відповідь людини", body.includes("resend"));
-check("у звіті є підсумок статусу", body.includes("готово"));
+check("у звіті є статус", body.includes("✅ готово"));
 
 // 3b. доопрацювання завершеної задачі продовжує ту саму історію
 const beforeRework = reportRun.messages.length;
@@ -108,7 +108,7 @@ check("той самий коментар-звіт", reworked.report?.commentId 
 
 const updated = (await board.commentsSince(ref("1"), new Date(0).toISOString()))
   .find((c) => c.id === reworked.report?.commentId)?.body ?? "";
-check("у звіті зʼявилось уточнення", updated.includes("Уточнення від тебе"));
+check("у звіті зʼявилось уточнення", updated.includes("**Уточнення**"));
 check("у звіті видно текст уточнення", updated.includes("застарілі токени"));
 
 // 3c. finishStatus налаштовується
