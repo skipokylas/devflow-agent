@@ -7,7 +7,12 @@
     "dev": "tsx --env-file=.env src/cli.ts",
     "typecheck": "tsc --noEmit",
     "ping": "tsx --env-file=.env src/ping.ts",
-    "memory": "tsx --env-file=.env src/memory.ts"
+    "memory": "tsx --env-file=.env src/memory.ts",
+    "try-llm": "tsx src/try-llm.ts",
+    "try-wire": "tsx src/try-wire.ts",
+    "try-storage": "tsx src/try-storage.ts",
+    "try-tools": "tsx src/try-tools.ts",
+    "try-loop": "tsx src/try-loop.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",

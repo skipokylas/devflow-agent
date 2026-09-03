@@ -1,24 +1,33 @@
 import type Anthropic from "@anthropic-ai/sdk";
+import { z } from "zod";
 
-export type RunStatus = "running" | "waiting_human" | "done" | "failed";
+/** Блоки SDK не описуємо — пропускаємо як є, їх валідує сам API. */
+const messageParam = z.custom<Anthropic.MessageParam>(
+  (v) => typeof v === "object" && v !== null && "role" in v,
+  { message: "не схоже на MessageParam" },
+);
 
-/** Стан паузи: все, що потрібно, щоб відновити ітерацію після відповіді людини. */
-export type Pending = {
-  /** id блока tool_use, на який чекає відповідь. Без нього API не звʼяже result із запитом. */
-  toolUseId: string;
-  question: string;
-  options: string[];
-  /** Результати інших інструментів з тієї ж ітерації — підуть одним user-повідомленням разом з відповіддю. */
-  partialResults: Anthropic.ToolResultBlockParam[];
-};
+const toolResultParam = z.custom<Anthropic.ToolResultBlockParam>(
+  (v) => typeof v === "object" && v !== null && (v as { type?: string }).type === "tool_result",
+);
 
-export type Run = {
-  id: string;
-  status: RunStatus;
-  /** Уся памʼять агента. Зберігається як є — те, що піде в messages.create. */
-  messages: Anthropic.MessageParam[];
-  /** null, коли run не на паузі. Саме null, а не undefined — щоб пережити JSON. */
-  pending: Pending | null;
-  /** Оптимістичне блокування: save проходить, тільки якщо у сховищі та сама версія. */
-  version: number;
-};
+export const pendingSchema = z.object({
+  toolUseId: z.string().min(1),
+  question: z.string().min(1),
+  options: z.array(z.string()),
+  partialResults: z.array(toolResultParam),
+});
+
+export const runSchema = z.object({
+  id: z.string().min(1),
+  status: z.enum(["running", "waiting_human", "done", "failed"]),
+  messages: z.array(messageParam),
+  pending: pendingSchema.nullable(),
+  /** Причина падіння. default(null) — щоб файли, записані до появи поля, читались далі. */
+  error: z.string().nullable().default(null),
+  version: z.number().int().nonnegative(),
+});
+
+export type RunStatus = Run["status"];
+export type Pending = z.infer<typeof pendingSchema>;
+export type Run = z.infer<typeof runSchema>;

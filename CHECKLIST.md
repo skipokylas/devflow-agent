@@ -1,0 +1,218 @@
+# Потоки даних і чекліст перевірок
+
+## Карта: що є, чого немає
+
+```
+є        src/agent/types.ts   runSchema (zod) → type Run
+є        src/agent/llm.ts     Llm, realLlm, scriptedLlm, fake*
+є        src/db/storage.ts       Storage, FileStorage (create/load/save, version)
+є        src/ping.ts          один виклик моделі
+є        src/memory.ts        накопичення історії вручну
+є        src/try-*.ts         сценарії перевірки
+
+є        src/agent/tools.ts   ToolRegistry, ask_human, read_file, access
+є        src/agent/loop.ts    advance() / resume()
+є        src/agent/channel.ts Channel (порт) + src/channel/cli.ts
+є        src/cli.ts           run | reply | show + composition root
+```
+
+---
+
+## Потік 1. Один виклик моделі — що йде по мережі
+
+Знято реальним перехопленням (`npm run try-wire`), не з памʼяті.
+
+```
+client.messages.create({ model, max_tokens, messages })
+        │
+        ▼  POST https://api.anthropic.com/v1/messages
+   anthropic-version: 2023-06-01
+   x-api-key: <з process.env.ANTHROPIC_API_KEY>
+   content-type: application/json
+
+   { "model": "claude-opus-5",
+     "max_tokens": 1024,
+     "messages": [ { "role": "user", "content": "додай magic links" } ] }
+        │
+        ▼  200 OK
+   { "id": "msg_...", "type": "message", "role": "assistant",
+     "content": [ { "type": "text", "text": "...", "citations": null } ],
+     "stop_reason": "end_turn",
+     "usage": { "input_tokens": …, "output_tokens": …, ... } }
+```
+
+Що з цього важливо:
+
+- тіло запиту = рівно те, що ти передав, плюс нічого. Сервер не додає ні історії, ні стану.
+- `content` — масив блоків. Типи блоків: `text`, `thinking`, `tool_use`. Тому `content[0].text` некоректний у загальному випадку.
+- `stop_reason` — керуючий сигнал циклу: `end_turn` (завершити), `tool_use` (виконати інструмент і повернутись), `max_tokens` (обрізано).
+- `usage` рахується від **усього** надісланого масиву. Історія оплачується заново щоразу.
+
+---
+
+## Потік 2. Як росте `messages` у циклі (буде в `advance`)
+
+Один прогін `agent run "додай magic links"`. Ліворуч — індекс у масиві, праворуч — хто це поклав.
+
+```
+[0] user       "додай magic links"                        ← CLI, з аргументу
+      │  POST #1  (messages = [0])
+      ▼
+[1] assistant  [ tool_use id=t1 read_file {path:"README"} ]  ← модель
+      │  воркер виконує інструмент
+[2] user       [ tool_result id=t1 "вміст README" ]          ← наш код
+      │  POST #2  (messages = [0,1,2])   ← весь масив знову
+      ▼
+[3] assistant  [ tool_use id=t2 ask_human {...} ]            ← модель
+      │  ask_human НЕ виконується. Пауза:
+      │     status = waiting_human
+      │     pending = { toolUseId: "t2", question, options, partialResults: [] }
+      │     save() → .runs/run_x.json
+      │     process.exit(0)          ← процес помер, масив зник
+      ╎
+      ╎  (інший процес, будь-коли пізніше)
+      ╎  agent reply run_x "варіант 2"
+      ╎     load() → масив [0..3] відновлено з диска
+      ▼
+[4] user       [ tool_result id=t2 "варіант 2" ]             ← відповідь людини
+      │  POST #3  (messages = [0,1,2,3,4])
+      ▼
+[5] assistant  "План: 1) ... 2) ..."   stop_reason=end_turn  ← done
+```
+
+Правила, які тут зашиті:
+
+- `tool_result.tool_use_id` мусить дорівнювати `id` блока `tool_use`. Інакше 400.
+- усі `tool_result` **однієї** ітерації йдуть одним `user`-повідомленням. Якщо модель в одному ході покликала `read_file` і `ask_human`, готовий результат `read_file` чекає в `pending.partialResults` і піде разом з відповіддю людини.
+- `assistant`-повідомлення кладеться цілим `response.content`, не витягнутим текстом — інакше блок `tool_use` зникне і наступний запит впаде.
+- єдина різниця між `run` і `reply` — звідки взявся масив: з аргументу CLI чи з диска.
+
+---
+
+## Потік 3. Персистенція — що відбувається з байтами
+
+```
+save(run)                                  load(id)
+   │                                          │
+   ├─ load з диска, звірка version            ├─ readFile → рядок
+   │     не збіглась → VersionConflict        ├─ JSON.parse → any
+   │                                          └─ runSchema.parse → Run
+   ├─ JSON.stringify({...run, version+1})           не збіглось → ZodError
+   ├─ writeFile → run_x.json.<uuid>.tmp
+   └─ rename(tmp → run_x.json)   ← атомарно
+```
+
+`rename` у межах однієї ФС атомарний: на диску або старий файл цілком, або новий цілком. Прямий `writeFile` у цільовий файл дав би обрізаний JSON, якби процес помер посеред запису.
+
+`save` повертає новий обʼєкт і не мутує аргумент — тому виклик завжди `run = await storage.save(run)`. Забуте присвоєння = вічний `VersionConflict` на наступному кроці.
+
+---
+
+## Порти: де проходять межі
+
+```
+ядро (advance/resume) залежить тільки від типів зліва
+
+Llm       ──►  realLlm(client)      мережа, гроші
+          └─►  scriptedLlm([...])   памʼять, $0, детерміновано
+
+Storage      ──►  FileStorage(".runs")    JSON-файли
+          └─►  SqliteStorage           коли знадобляться запити по статусу
+
+Channel   ──►  CliChannel           друк у stdout        (ще не створено)
+          └─►  TelegramChannel      фаза 6
+```
+
+Наслідок: увесь сценарій паузи й відновлення тестується без мережі й без витрат. Реальна модель потрібна тільки щоб перевірити зміст промпта.
+
+---
+
+## Чекліст
+
+### A. Оточення
+
+- [ ] `npm run typecheck` — без помилок
+- [ ] `npm run dev` — друкує `ok`
+- [ ] `.env` існує, у ньому справжній `ANTHROPIC_API_KEY`
+- [ ] `git status` — `.env` не відстежується, у списку тільки `.env.example`
+
+### B. Персистенція — `npm run try-storage`
+
+Має бути 11 галочок. Кожна доводить окрему властивість:
+
+- [ ] `create → version 1` — нова сутність починає з версії 1, не 0
+- [ ] `create → файл на диску` — стан вийшов за межі процесу
+- [ ] `save → version 2` — кожен запис піднімає версію
+- [ ] `load → історія збережена` — `messages` пережили серіалізацію
+- [ ] `load → статус збережений` — union-рядок лягає в JSON без конвертації
+- [ ] `save зі старою версією → VersionConflict` — compare-and-set працює
+- [ ] `після конфлікту файл не змінився` — відхилений запис нічого не зіпсував
+- [ ] `load неіснуючого → RunNotFound` — типізована помилка, не `undefined`
+- [ ] `create того самого id → RunAlreadyExists` — без тихого перезапису
+- [ ] `невалідний status → ZodError на load` — межа довіри тримає
+- [ ] `тимчасові файли прибрані` — `.tmp` не накопичуються
+
+Далі руками: `cat .runs/try/run_demo.json` — переконайся, що структура файлу збігається з `runSchema`.
+
+### C. Підроблена модель — `npm run try-llm`
+
+- [ ] `виклик 1 → stop_reason tool_use` — сигнал «виконай інструмент»
+- [ ] `виклик 1 → блок tool_use з id` — id, за яким потім знайдеться `tool_result`
+- [ ] `виклик 1 → input дійшов` — аргументи інструмента доїхали
+- [ ] `виклик 2 → stop_reason end_turn` — сигнал «цикл завершено»
+- [ ] `виклик 2 → текстовий блок` — фінальна відповідь приходить як `text`
+- [ ] `виклик 3 → скрипт вичерпано` — падає гучно, а не віддає `undefined`
+- [ ] `токени не витрачені` — мережі не було
+
+### D. Мережа — `npm run try-wire`
+
+Ключ не потрібен, запит іде на локальний сервер.
+
+- [ ] шлях `POST /v1/messages`
+- [ ] заголовок `anthropic-version: 2023-06-01`
+- [ ] у тілі рівно `model`, `max_tokens`, `messages` — нічого зайвого
+- [ ] у відповіді `content` — масив, а не рядок
+
+### E. Реальна модель (потрібен ключ, коштує гроші)
+
+- [ ] `npm run ping` — приходить текст
+- [ ] `npm run memory` — на друге питання відповідає правильно, `input_tokens` другого виклику більший за перший
+- [ ] порівняй вартість: той самий `ping` з `claude-haiku-4-5` замість `claude-opus-5`
+
+### F. Реєстр інструментів — `npm run try-tools`
+
+- [ ] `read_file` повертає справжній вміст
+- [ ] невалідний `input` від моделі ловить zod
+- [ ] шлях `../../.ssh/id_rsa` відбито
+- [ ] невідома назва → `UnknownTool`
+- [ ] `ask_human` реєстром не виконується
+- [ ] `access: write` без дозволу → `NotApproved`
+
+### G. Цикл — `npm run try-loop`
+
+- [ ] помилка інструмента → `tool_result` з `is_error: true`, run іде далі
+- [ ] `maxSteps` вичерпано → `failed`
+- [ ] пауза: `pending.toolUseId` = id блока `ask_human`
+- [ ] `partialResults` зберігає результат інструмента з тієї ж ітерації
+- [ ] `resume` віддає обидва `tool_result` одним `user`-повідомленням
+- [ ] `resume` не на паузі → `NotWaiting`
+- [ ] помилка виклику моделі → `failed` + причина в полі `error` (не застрягання в `running`)
+- [ ] `agent retry <id>` продовжує `failed`; на `done` і `waiting_human` відбивається
+
+### H. Наскрізний прогін фази 0 (без витрат)
+
+```bash
+AGENT_LLM=demo npm run dev -- run "додай magic links"
+npm run dev -- show <runId>
+AGENT_LLM=demo npm run dev -- reply <runId> "resend"
+```
+
+- [ ] перший процес завершується зі статусом `waiting_human`
+- [ ] `show` між процесами показує історію й питання
+- [ ] `reply` в новому процесі доводить run до `done`, нічого не перепитуючи
+
+### I. Ще немає
+
+- [ ] повторний `run` не створює дублікатів issues (фаза 3)
+- [ ] untrusted-обгортка для даних із GitHub
+- [ ] таблиця `events` (llm_call / tool_call / вартість)
