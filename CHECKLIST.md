@@ -10,7 +10,9 @@ src/agent/loop.ts     advance() / resume() / retry()
 src/agent/channel.ts  Channel (порт) + src/channel/cli.ts
 src/db/storage.ts     Storage, FileStorage (create/load/save, version)
 src/trace/            Span, TraceSink, FileSink, Tracer, рендер тексту й HTML
-src/cli.ts            run | reply | retry | trace | show + composition root
+src/cli.ts            run | reply | retry | list | trace | show
+src/deps.ts           composition root
+src/repo.ts           ідентичність репо за remote URL, тека стану
 src/ping.ts           один виклик моделі          ← навчальний
 src/memory.ts         накопичення історії вручну  ← навчальний
 src/try-*.ts          п'ять сценаріїв перевірки
@@ -141,7 +143,7 @@ Channel   ──►  CliChannel           друк у stdout        (ще не �
 - [ ] `.env` існує, у ньому справжній `ANTHROPIC_API_KEY`
 - [ ] `git status` — `.env` не відстежується, у списку тільки `.env.example`
 
-### B. Персистенція — `npm run try-storage` (11 перевірок)
+### B. Персистенція — `npm run try-storage` (14 перевірок)
 
 Має бути 11 галочок. Кожна доводить окрему властивість:
 
@@ -155,6 +157,8 @@ Channel   ──►  CliChannel           друк у stdout        (ще не �
 - [ ] `load неіснуючого → RunNotFound` — типізована помилка, не `undefined`
 - [ ] `create того самого id → RunAlreadyExists` — без тихого перезапису
 - [ ] `невалідний status → ZodError на load` — межа довіри тримає
+- [ ] `list` повертає всі runs і парсить кожен через схему
+- [ ] `list` переживає зіпсований файл — один поганий не ховає решту
 - [ ] `тимчасові файли прибрані` — `.tmp` не накопичуються
 
 Далі руками: `cat .runs/try/run_demo.json` — переконайся, що структура файлу збігається з `runSchema`.
@@ -196,7 +200,7 @@ Channel   ──►  CliChannel           друк у stdout        (ще не �
 - [ ] `ask_human` реєстром не виконується
 - [ ] `access: write` без дозволу → `NotApproved`
 
-### G. Цикл і трейс — `npm run try-loop` (23 перевірки)
+### G. Цикл, untrusted і трейс — `npm run try-loop` (25 перевірок)
 
 - [ ] помилка інструмента → `tool_result` з `is_error: true`, run іде далі
 - [ ] `maxSteps` вичерпано → `failed`
@@ -210,6 +214,8 @@ Channel   ──►  CliChannel           друк у stdout        (ще не �
 - [ ] спани записані, `tool_call` висить на `llm_call`
 - [ ] два корені в дереві: `run` і `reply` — межа процесів видна
 - [ ] `question` і `answer` потрапили у трейс
+- [ ] вміст файлу загорнутий у `<untrusted>`
+- [ ] закриваючий тег усередині вмісту знешкоджений
 
 ### H. Наскрізний прогін фази 0 (без витрат)
 

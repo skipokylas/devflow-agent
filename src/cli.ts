@@ -1,25 +1,30 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
+import path from "node:path";
 import { advance, resume, retry, NotRetryable, NotWaiting, type Deps } from "./agent/loop";
 import { buildDeps } from "./deps";
+import { stateDir } from "./repo";
 import { RunNotFound } from "./db/storage";
 import { summary, toHtml, toText } from "./trace/render";
 import type { Run } from "./agent/types";
 
-const deps: Deps = buildDeps();
-const { storage, trace } = deps;
+const deps = buildDeps();
+const { storage, trace, repo } = deps;
+const traceDir = path.join(stateDir(repo), "traces");
 
 function usage(): void {
   console.log(`Використання:
   agent run "<задача>"              створити run і працювати до паузи
   agent reply <runId> "<відповідь>" продовжити run, що чекає на людину
   agent retry <runId>               повторити перерваний run (failed або обірваний)
+  agent list                        усі runs цього репозиторію
   agent trace <runId>               дерево кроків: що робив і скільки коштувало
   agent show <runId>                показати стан run
 
 Змінні оточення:
   AGENT_LLM=demo   офлайн-модель без мережі й витрат
-  AGENT_PROMPT=v1  варіант системного промпта (типово v3)
+  AGENT_PROMPT=v1  варіант системного промпта (типово v4)
+  AGENT_REPO=path  репозиторій, з яким працюємо (типово поточна тека)
   MODEL=...        модель (типово claude-opus-5)
   MAX_STEPS=...    ліміт кроків циклу (типово 8)`);
 }
@@ -62,6 +67,28 @@ async function cmdRetry(args: string[]): Promise<void> {
   console.log(`\n${finished.id} → ${finished.status}`);
 }
 
+async function cmdList(): Promise<void> {
+  const runs = await storage.list();
+  console.log(`${repo.id}\n`);
+  if (runs.length === 0) {
+    console.log("немає жодного run");
+    return;
+  }
+
+  for (const run of runs) {
+    const first = run.messages[0];
+    const task =
+      typeof first?.content === "string"
+        ? first.content
+        : (first?.content ?? []).map((b) => ("text" in b ? b.text : "")).join(" ");
+    console.log(
+      `${run.id}  ${run.status.padEnd(13)} ${String(run.messages.length).padStart(3)} повід.  ` +
+        `${task.replace(/\s+/g, " ").slice(0, 46)}`,
+    );
+    if (run.pending) console.log(`${" ".repeat(14)}чекає: ${run.pending.question.slice(0, 60)}`);
+  }
+}
+
 async function cmdTrace(args: string[]): Promise<void> {
   const id = args[0];
   if (!id) throw new Error("потрібен id: agent trace <runId>");
@@ -76,7 +103,7 @@ async function cmdTrace(args: string[]): Promise<void> {
   );
   console.log(toText(spans));
 
-  const file = `.runs/traces/${id}.html`;
+  const file = path.join(traceDir, `${id}.html`);
   await fs.writeFile(file, toHtml(id, spans), "utf8");
   console.log(`\nводоспад: open ${file}`);
 }
@@ -112,6 +139,9 @@ try {
       break;
     case "retry":
       await cmdRetry(rest);
+      break;
+    case "list":
+      await cmdList();
       break;
     case "trace":
       await cmdTrace(rest);

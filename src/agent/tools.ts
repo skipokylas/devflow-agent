@@ -90,6 +90,16 @@ function resolveInRoot(ctx: ToolContext, rel: string): string {
   return target;
 }
 
+/**
+ * Чужий текст у контексті моделі має бути явно позначений як дані.
+ * Будь-хто, хто може відредагувати файл або відкрити issue, інакше може написати
+ * туди «ignore previous instructions».
+ */
+export function untrusted(source: string, text: string): string {
+  const safe = text.replace(/<\/untrusted/gi, "<\\/untrusted");
+  return `<untrusted source="${source}">\n${safe}\n</untrusted>`;
+}
+
 /** Теки, які роздують контекст і нічого не пояснюють про проєкт. */
 const IGNORED = new Set([
   "node_modules", ".git", ".runs", "dist", "build", "coverage", ".next", ".turbo",
@@ -121,7 +131,8 @@ export const readFile = defineTool({
   execute: async ({ path: rel }, ctx) => {
     const text = await fs.readFile(resolveInRoot(ctx, rel), "utf8");
     const limit = 20_000;
-    return text.length > limit ? `${text.slice(0, limit)}\n…(обрізано)` : text;
+    const body = text.length > limit ? `${text.slice(0, limit)}\n…(обрізано)` : text;
+    return untrusted(`file:${rel}`, body);
   },
 });
 

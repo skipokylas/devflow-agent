@@ -227,7 +227,8 @@ HTML і CSS grid; React Flow — тільки якщо знадобиться в
 
 ## Системний промпт
 
-Варіанти в `src/agent/prompt.ts`, типово `v3`. Міняти тільки за виміряним
+Варіанти в `src/agent/prompt.ts`, типово `v4` (`v3` плюс правило про
+`<untrusted>`). Міняти тільки за виміряним
 прогоном: `npm run ab -- v1 v3` ганяє однакові питання на кожному варіанті й
 рахує посилання на файли, читання і вартість.
 
@@ -372,8 +373,11 @@ DECISIONS.md   написаний        → цільове репо/.devflow/, 
   ніколи не лишається в `running` назавжди.
 - `maxSteps` обовʼязковий: інакше крива модель спалює бюджет мовчки.
 - `save()` після кожного кроку, не в кінці.
-- Untrusted input: усе з GitHub (README, тіла issues, коментарі) потрапляє в
-  контекст загорнутим у `<untrusted source="...">…</untrusted>`.
+- Untrusted input: чужий текст іде в контекст загорнутим у
+  `<untrusted source="...">…</untrusted>`; закриваючий тег усередині вмісту
+  знешкоджується, інакше його можна підробити. Реалізовано для `read_file`
+  (`untrusted()` у `agent/tools.ts`); для тіл issues і коментарів — при
+  підключенні GitHub. Правило для моделі — у промпті `v4`.
 - Ідемпотентність: маркер у тілі issue (`<!-- run:run_123 task:4 -->`) плюс запис
   зовнішнього id у власну таблицю до того, як результат віддається моделі.
 
@@ -384,14 +388,15 @@ npm run typecheck                     # tsc --noEmit
 npm run dev -- run "<задача>"         # створити run і працювати до паузи
 npm run dev -- reply <id> "<текст>"   # продовжити run, що чекає на людину
 npm run dev -- retry <id>             # повторити перерваний run
+npm run dev -- list                   # усі runs цього репозиторію
 npm run dev -- trace <id>             # дерево кроків, час і вартість
 npm run dev -- show <id>              # стан run
 
 npm run try-wire      # справжній HTTP-запит через локальний сервер-підміну
-npm run try-storage   # 11 перевірок FileStorage
+npm run try-storage   # 14 перевірок FileStorage
 npm run try-tools     # 14 перевірок реєстру інструментів
 npm run try-llm       # 7 перевірок підробленої моделі
-npm run try-loop      # 23 перевірки циклу
+npm run try-loop      # 25 перевірок циклу
 ```
 
 Змінні: `AGENT_LLM=demo` (офлайн-модель, без витрат), `MODEL`, `MAX_STEPS`.

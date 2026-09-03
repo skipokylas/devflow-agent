@@ -26,6 +26,7 @@ export interface Storage {
   create(run: Run): Promise<Run>;
   load(id: string): Promise<Run>;
   save(run: Run): Promise<Run>;
+  list(): Promise<Run[]>;
 }
 
 export class FileStorage implements Storage {
@@ -65,6 +66,28 @@ export class FileStorage implements Storage {
     const next: Run = { ...run, version: run.version + 1 };
     await this.write(next);
     return next;
+  }
+
+  /** Перебір усієї теки з парсингом кожного файлу — саме тут файли впруться в межу. */
+  async list(): Promise<Run[]> {
+    let names: string[];
+    try {
+      names = await fs.readdir(this.dir);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw err;
+    }
+
+    const runs: Run[] = [];
+    for (const name of names.filter((n) => n.endsWith(".json"))) {
+      try {
+        runs.push(await this.load(name.slice(0, -".json".length)));
+      } catch {
+        // Один зіпсований файл не має ховати решту: команда list існує саме щоб
+        // побачити все. Конкретна помилка вилізе на load цього id.
+      }
+    }
+    return runs.sort((a, b) => a.id.localeCompare(b.id));
   }
 
   private async exists(id: string): Promise<boolean> {
