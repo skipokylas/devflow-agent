@@ -2,6 +2,7 @@ import { assertBoardMatchesRemote, assertRunBelongs, RepoMismatch } from "./guar
 import { configSchema } from "./config";
 import { normalizeRemote, type RepoRef } from "./repo";
 import type { Run } from "./agent/types";
+import { newRun } from "./agent/run";
 
 let failed = 0;
 function check(name: string, ok: boolean, detail = ""): void {
@@ -57,14 +58,8 @@ check("немає remote → відмова",
 
 // 6. run з іншого репо не продовжується тут
 const run = (repoId: string | null): Run => ({
-  id: "run_1",
-  status: "waiting_human",
-  messages: [],
-  pending: null,
-  error: null,
-  ticket: null,
+  ...newRun({ id: "run_1", status: "waiting_human" }),
   repo: repoId === null ? null : { id: repoId, remote: null },
-  version: 1,
 });
 
 check("run цього репо → без помилки",

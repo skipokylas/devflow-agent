@@ -25,23 +25,32 @@ export class InMemoryBoard implements Board {
     this.tickets.set(key(ref), { ...(await this.get(ref)), status, updatedAt: new Date().toISOString() });
   }
 
-  async comment(ref: TicketRef, body: string): Promise<void> {
-    this.push(ref, { author: "devflow", mine: true, body });
+  async comment(ref: TicketRef, body: string): Promise<string> {
+    return this.push(ref, { author: "devflow", mine: true, body });
+  }
+
+  async editComment(ref: TicketRef, commentId: string, body: string): Promise<void> {
+    const thread = this.threads.get(key(ref)) ?? [];
+    const found = thread.find((c) => c.id === commentId);
+    if (!found) throw new Error(`коментаря ${commentId} немає`);
+    found.body = body;
   }
 
   /** Для сценаріїв: імітує відповідь людини. */
-  reply(ref: TicketRef, body: string, author = "human"): void {
-    this.push(ref, { author, mine: false, body });
+  reply(ref: TicketRef, body: string, author = "human"): string {
+    return this.push(ref, { author, mine: false, body });
   }
 
   async commentsSince(ref: TicketRef, since: string): Promise<BoardComment[]> {
     return (this.threads.get(key(ref)) ?? []).filter((c) => c.createdAt > since);
   }
 
-  private push(ref: TicketRef, c: Omit<BoardComment, "id" | "createdAt">): void {
+  private push(ref: TicketRef, c: Omit<BoardComment, "id" | "createdAt">): string {
     const thread = this.threads.get(key(ref)) ?? [];
-    thread.push({ ...c, id: `c${++this.seq}`, createdAt: new Date().toISOString() });
+    const id = `c${++this.seq}`;
+    thread.push({ ...c, id, createdAt: new Date().toISOString() });
     this.threads.set(key(ref), thread);
+    return id;
   }
 }
 

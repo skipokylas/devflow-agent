@@ -12,8 +12,10 @@ export interface Board {
 
   setStatus(ref: TicketRef, status: TicketStatus): Promise<void>;
 
-  /** Канал спілкування: агент питає й звітує коментарем під квитком. */
-  comment(ref: TicketRef, body: string): Promise<void>;
+  /** Повертає id, щоб коментар-звіт можна було редагувати замість плодити нові. */
+  comment(ref: TicketRef, body: string): Promise<string>;
+
+  editComment(ref: TicketRef, commentId: string, body: string): Promise<void>;
 
   /**
    * Коментарі після заданого моменту — так ловляться відповіді людини.

@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import { ZodError } from "zod";
 import { FileStorage, RunAlreadyExists, RunNotFound, VersionConflict } from "./db/storage";
+import { newRun } from "./agent/run";
 import type { Run } from "./agent/types";
 
 const dir = ".runs/try";
@@ -22,16 +23,10 @@ async function expectError<T>(fn: () => Promise<unknown>, ctor: new (...a: never
   }
 }
 
-const draft: Run = {
+const draft = newRun({
   id: "run_demo",
-  status: "running",
-  messages: [{ role: "user", content: "додай passwordless-авторизацію" }],
-  pending: null,
-  error: null,
-  ticket: null,
-  repo: null,
-  version: 0,
-};
+  task: "додай passwordless-авторизацію",
+});
 
 // 1. create
 let run = await storage.create(draft);

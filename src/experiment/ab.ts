@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { Channel } from "../agent/channel";
 import { advance } from "../agent/loop";
 import { promptOf } from "../agent/prompt";
+import { newRun } from "../agent/run";
 import type { Run } from "../agent/types";
 import { buildDeps } from "../deps";
 import { summary } from "../trace/render";
@@ -56,16 +57,10 @@ for (const variant of variants) {
 
   for (const question of QUESTIONS) {
    for (let attempt = 1; attempt <= repeats; attempt++) {
-    const draft: Run = {
+    const draft = newRun({
       id: `ab_${variant}_${randomUUID().slice(0, 6)}`,
-      status: "running",
-      messages: [{ role: "user", content: question }],
-      pending: null,
-      error: null,
-      ticket: null,
-      repo: null,
-      version: 0,
-    };
+      task: question,
+    });
 
     const run = await advance(await deps.storage.create(draft), deps);
     const spans = await deps.trace.read(run.id);

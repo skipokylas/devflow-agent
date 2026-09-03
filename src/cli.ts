@@ -1,10 +1,11 @@
-import { randomUUID } from "node:crypto";
 import { envFile, loadEnv } from "./env";
 import fs from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 import path from "node:path";
 import { advance, resume, retry, NotRetryable, NotWaiting, type Deps } from "./agent/loop";
 import { buildDeps } from "./deps";
+import { LiveChannel } from "./channel/live";
+import { CliChannel } from "./channel/cli";
 import { stateDir } from "./repo";
 import { assertBoardMatchesRemote, assertRunBelongs, bindingOf, RepoMismatch } from "./guard";
 import { InMemoryBoard } from "./board/memory";
@@ -15,11 +16,11 @@ import { init } from "./init";
 import { watch } from "./scheduler";
 import { RunNotFound } from "./db/storage";
 import { summary, toHtml, toText } from "./trace/render";
-import type { Run } from "./agent/types";
+import { newRun } from "./agent/run";
 
 loadEnv();
 
-const deps = buildDeps();
+const deps = buildDeps({ channel: new LiveChannel(new CliChannel()) });
 const { storage, trace, repo } = deps;
 const traceDir = path.join(stateDir(repo), "traces");
 
@@ -46,24 +47,11 @@ function usage(): void {
   MAX_STEPS=...    ліміт кроків циклу (типово 8)`);
 }
 
-function newRun(task: string): Run {
-  return {
-    id: `run_${randomUUID().slice(0, 8)}`,
-    status: "running",
-    messages: [{ role: "user", content: task }],
-    pending: null,
-    error: null,
-    ticket: null,
-    repo: bindingOf(repo),
-    version: 0,
-  };
-}
-
 async function cmdRun(args: string[]): Promise<void> {
   const task = args[0];
   if (!task) throw new Error(`потрібна задача: agent run "<задача>"`);
 
-  const created = await storage.create(newRun(task));
+  const created = await storage.create(newRun({ task, repo: bindingOf(repo) }));
   console.log(`${created.id} створено\n`);
 
   const finished = await advance(created, deps);

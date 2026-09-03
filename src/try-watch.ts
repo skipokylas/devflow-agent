@@ -79,7 +79,37 @@ check("квиток переведений у done", (await board.get(ref("1")))
 
 const thread = await board.commentsSince(ref("1"), new Date(0).toISOString());
 check("агент писав у квиток", thread.some((c) => c.mine && c.body.includes("Потрібна відповідь")));
-check("фінальний звіт у квитку", thread.some((c) => c.mine && c.body.includes("Готово")));
+check("звіт у квитку", thread.some((c) => c.mine && c.body.startsWith("### devflow")));
+
+// 3a. звіт: один коментар, який редагується, а не низка нових
+const reportRun = await storage.load(first?.id ?? "");
+check("звіт створений і привʼязаний до run", reportRun.report !== null);
+
+const mine = (await board.commentsSince(ref("1"), new Date(0).toISOString())).filter((c) => c.mine);
+check("звіт один, не низка коментарів", mine.filter((c) => c.body.startsWith("### devflow")).length === 1,
+  `${mine.length} своїх коментарів`);
+
+const body = mine.find((c) => c.body.startsWith("### devflow"))?.body ?? "";
+check("у звіті є задача", body.includes("**Задача**"));
+check("у звіті є питання агента", body.includes("**Питання:**"));
+check("у звіті є відповідь людини", body.includes("resend"));
+check("у звіті є підсумок статусу", body.includes("готово"));
+
+// 3b. доопрацювання завершеної задачі продовжує ту саму історію
+const beforeRework = reportRun.messages.length;
+board.reply(ref("1"), "додай ще перевірку на застарілі токени");
+await tick(deps, board, log);
+
+const reworked = await storage.load(first?.id ?? "");
+check("доопрацювання додало повідомлення в ту саму історію", reworked.messages.length > beforeRework,
+  `${beforeRework} → ${reworked.messages.length}`);
+check("run не задвоївся", (await storage.list()).length === 2);
+check("той самий коментар-звіт", reworked.report?.commentId === reportRun.report?.commentId);
+
+const updated = (await board.commentsSince(ref("1"), new Date(0).toISOString()))
+  .find((c) => c.id === reworked.report?.commentId)?.body ?? "";
+check("у звіті зʼявилось уточнення", updated.includes("Уточнення від тебе"));
+check("у звіті видно текст уточнення", updated.includes("застарілі токени"));
 
 // 4. відновлення після простою
 const second = (await storage.list()).find((r) => r.status === "waiting_human");

@@ -78,8 +78,16 @@ export class GitHubBoard implements Board {
     await this.projects.setStatus(itemId, status);
   }
 
-  async comment(ref: TicketRef, body: string): Promise<void> {
-    await this.api.post(`/repos/${this.cfg.scope}/issues/${ref.externalId}/comments`, { body });
+  async comment(ref: TicketRef, body: string): Promise<string> {
+    const created = await this.api.post<{ id: number }>(
+      `/repos/${this.cfg.scope}/issues/${ref.externalId}/comments`,
+      { body },
+    );
+    return String(created.id);
+  }
+
+  async editComment(_ref: TicketRef, commentId: string, body: string): Promise<void> {
+    await this.api.patch(`/repos/${this.cfg.scope}/issues/comments/${commentId}`, { body });
   }
 
   async commentsSince(ref: TicketRef, since: string): Promise<BoardComment[]> {

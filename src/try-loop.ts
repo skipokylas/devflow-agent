@@ -5,6 +5,7 @@ import { fakeMessage, fakeText, fakeToolUse, scriptedLlm } from "./agent/llm";
 import { NotRetryable, NotWaiting, advance, resume, retry, type Deps } from "./agent/loop";
 import { defaultTools } from "./agent/tools";
 import type { Run } from "./agent/types";
+import { newRun } from "./agent/run";
 import { FileStorage } from "./db/storage";
 import { FileSink } from "./trace/sink";
 import { summary, toTree } from "./trace/render";
@@ -30,10 +31,8 @@ function deps(llm: Deps["llm"], channel = new SilentChannel(), maxSteps = 8): De
   return { llm, storage, trace, tools: defaultTools, channel, model: "fake", maxSteps, root: process.cwd() };
 }
 
-const draft = (id: string): Run => ({
-  id, status: "running", pending: null, error: null, ticket: null, repo: null, version: 0,
-  messages: [{ role: "user", content: "задача" }],
-});
+const draft = (id: string): Run =>
+  newRun({ id, task: "задача" });
 
 // 1. Помилка інструмента не валить run, а вертається в модель
 {

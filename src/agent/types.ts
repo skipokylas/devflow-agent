@@ -36,6 +36,10 @@ export const runSchema = z.object({
    * ця гарантія зникне, тому привʼязка потрібна раніше за базу.
    */
   repo: z.object({ id: z.string(), remote: z.string().nullable() }).nullable().default(null),
+  /** Коментар-звіт під квитком: один на run, редагується по ходу роботи. */
+  report: z.object({ commentId: z.string() }).nullable().default(null),
+  /** Момент останнього врахованого коментаря — щоб не обробити той самий двічі. */
+  lastCommentAt: z.string().nullable().default(null),
   version: z.number().int().nonnegative(),
 });
 

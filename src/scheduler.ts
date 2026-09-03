@@ -1,10 +1,12 @@
-import { randomUUID } from "node:crypto";
 import { advance, resume, type Deps } from "./agent/loop";
+import { newRun } from "./agent/run";
 import { untrusted } from "./agent/tools";
 import type { Run } from "./agent/types";
 import type { Board } from "./board/board";
 import type { Ticket, TicketRef } from "./board/types";
 import { BoardChannel } from "./channel/board";
+import { renderReport } from "./report";
+import { LiveChannel } from "./channel/live";
 import type { RepoRef } from "./repo";
 import { bindingOf } from "./guard";
 
@@ -64,18 +66,37 @@ async function intake(deps: Deps, board: Board, log: (l: string) => void, repo?:
   }
 }
 
-/** Відповідь людини — перший чужий коментар після моменту питання. */
+/**
+ * Один прохід по коментарях покриває два випадки: відповідь на питання агента
+ * і доопрацювання вже завершеної задачі. Різниця лише в тому, як текст лягає
+ * в історію: як tool_result чи як нове user-повідомлення.
+ */
 async function collectAnswers(deps: Deps, board: Board, log: (l: string) => void): Promise<void> {
   for (const run of await deps.storage.list()) {
-    if (run.status !== "waiting_human" || !run.pending || !run.ticket) continue;
+    if (!run.ticket) continue;
+    if (run.status !== "waiting_human" && run.status !== "done") continue;
 
-    const comments = await board.commentsSince(run.ticket, run.pending.askedAt);
-    const answer = comments.find((c) => !c.mine);
+    const since = run.lastCommentAt ?? run.pending?.askedAt ?? "";
+    const answer = (await board.commentsSince(run.ticket, since)).find((c) => !c.mine);
     if (!answer) continue;
 
-    log(`відповідь на ${run.id}: ${answer.body.slice(0, 60)}`);
+    const seen = await deps.storage.save({ ...run, lastCommentAt: answer.createdAt });
     await board.setStatus(run.ticket, "in_progress");
-    await finish(deps, board, await resume(run.id, answer.body, withChannel(deps, board, run)), log);
+
+    if (seen.status === "waiting_human") {
+      log(`відповідь на ${seen.id}: ${answer.body.slice(0, 60)}`);
+      await finish(deps, board, await resume(seen.id, answer.body, withChannel(deps, board, seen)), log);
+      continue;
+    }
+
+    // Доопрацювання: та сама історія плюс нове прохання — модель памʼятає, що вже зробила.
+    log(`доопрацювання ${seen.id}: ${answer.body.slice(0, 60)}`);
+    const reopened = await deps.storage.save({
+      ...seen,
+      status: "queued",
+      messages: [...seen.messages, { role: "user", content: answer.body }],
+    });
+    await finish(deps, board, await advance(reopened, withChannel(deps, board, reopened)), log);
   }
 }
 
@@ -95,39 +116,44 @@ async function advanceNext(deps: Deps, board: Board, log: (l: string) => void): 
 async function finish(deps: Deps, board: Board, run: Run, log: (l: string) => void): Promise<void> {
   if (!run.ticket) return;
 
-  if (run.status === "done") {
-    await board.setStatus(run.ticket, "done");
-    await board.comment(run.ticket, `Готово. Трейс: \`devflow trace ${run.id}\``);
-  } else if (run.status === "failed") {
-    await board.setStatus(run.ticket, "blocked");
-    await board.comment(run.ticket, `Зупинився: ${run.error ?? "невідома причина"}`);
-  } else if (run.status === "waiting_human") {
-    await board.setStatus(run.ticket, "blocked");
-  }
+  const column = { done: "done", failed: "blocked", waiting_human: "blocked" } as const;
+  const next = column[run.status as keyof typeof column];
+  if (next) await board.setStatus(run.ticket, next);
+
+  await publishReport(deps, board, run);
   log(`${run.id} → ${run.status}`);
 }
 
+/** Один коментар на run: створюється при першому звіті, далі редагується. */
+async function publishReport(deps: Deps, board: Board, run: Run): Promise<Run> {
+  if (!run.ticket) return run;
+
+  const body = renderReport(run, await deps.trace.read(run.id));
+
+  if (run.report) {
+    await board.editComment(run.ticket, run.report.commentId, body);
+    return run;
+  }
+
+  const commentId = await board.comment(run.ticket, body);
+  return deps.storage.save({ ...run, report: { commentId } });
+}
+
 function withChannel(deps: Deps, board: Board, run: Run): Deps {
-  return run.ticket ? { ...deps, channel: new BoardChannel(board, run.ticket) } : deps;
+  if (!run.ticket) return deps;
+  return { ...deps, channel: new LiveChannel(new BoardChannel(board, run.ticket)) };
 }
 
 function runFor(ticket: Ticket, repo?: RepoRef): Run {
-  return {
-    id: `run_${randomUUID().slice(0, 8)}`,
+  return newRun({
     status: "queued",
-    messages: [
-      {
-        role: "user",
-        content: `Задача з квитка ${ticket.ref.externalId}: ${ticket.title}\n\n${untrusted(
-          `ticket:${ticket.ref.provider}:${ticket.ref.externalId}`,
-          ticket.body,
-        )}`,
-      },
-    ],
-    pending: null,
-    error: null,
+    task: `Задача з квитка ${ticket.ref.externalId}: ${ticket.title}
+
+${untrusted(
+      `ticket:${ticket.ref.provider}:${ticket.ref.externalId}`,
+      ticket.body,
+    )}`,
     ticket: ticket.ref,
     repo: repo ? bindingOf(repo) : null,
-    version: 0,
-  };
+  });
 }

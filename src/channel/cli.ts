@@ -15,7 +15,7 @@ export class CliChannel implements Channel {
   async ask(run: Run, q: Question): Promise<void> {
     console.log(`\n${q.question}`);
     q.options.forEach((o, i) => console.log(`  ${i + 1}. ${o}`));
-    console.log(`\nвідповісти:  ${envPrefix()}npm run dev -- reply ${run.id} "<відповідь>"`);
+    console.log(`\nвідповісти:  ${envPrefix()}devflow reply ${run.id} "<відповідь>"`);
   }
 
   async notify(_run: Run, text: string): Promise<void> {

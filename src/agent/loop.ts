@@ -2,6 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { Storage } from "../db/storage";
 import { Tracer, type OpenSpan, type TraceSink } from "../trace/sink";
 import type { Channel } from "./channel";
+import { priceOf } from "../trace/types";
 import type { Llm } from "./llm";
 import { ASK_HUMAN, type ToolContext, type ToolRegistry } from "./tools";
 import type { Run } from "./types";
@@ -37,8 +38,11 @@ export async function advance(run: Run, deps: Deps, parentId: string | null = nu
   const root = tracer.start();
   const name = parentId ? "advance" : "run";
 
+  await deps.channel.progress?.(run, { kind: "start", task: taskOf(run) });
+
   try {
     const finished = await loop(current, deps, tracer, root.id, (next) => (current = next));
+    await deps.channel.progress?.(finished, { kind: "end", status: finished.status });
     await tracer.finish(root, {
       parentId,
       type: "run",
@@ -73,6 +77,13 @@ async function loop(
       tools: deps.tools.definitions(),
       messages: current.messages,
     });
+
+    const cost = {
+      model: deps.model,
+      inputTokens: response.usage.input_tokens,
+      outputTokens: response.usage.output_tokens,
+    };
+
     await tracer.finish(call, {
       parentId: rootId,
       type: "llm_call",
@@ -86,11 +97,17 @@ async function loop(
       },
       // Повний content, а не лише stop_reason: саме тут видно, що модель вирішила й написала.
       output: { stopReason: response.stop_reason, content: response.content },
-      cost: {
-        model: deps.model,
-        inputTokens: response.usage.input_tokens,
-        outputTokens: response.usage.output_tokens,
-      },
+      cost,
+    });
+
+    await deps.channel.progress?.(current, {
+      kind: "llm",
+      step,
+      model: deps.model,
+      stopReason: response.stop_reason,
+      inputTokens: cost.inputTokens,
+      outputTokens: cost.outputTokens,
+      costUsd: priceOf(cost),
     });
 
     current = await push(current, { role: "assistant", content: response.content }, deps);
@@ -116,8 +133,19 @@ async function loop(
     // Спершу виконуємо всі звичайні інструменти: кожен tool_use мусить отримати результат.
     for (const use of toolUses) {
       if (use.name === ASK_HUMAN) continue;
-      await deps.channel.notify(current, `  → ${use.name} ${JSON.stringify(use.input)}`);
-      results.push(await runTool(deps, use, ctx, tracer, call.id));
+      const startedAt = Date.now();
+      const result = await runTool(deps, use, ctx, tracer, call.id);
+      await deps.channel.progress?.(current, {
+        kind: "tool",
+        name: use.name,
+        input: use.input,
+        ok: result.is_error !== true,
+        ms: Date.now() - startedAt,
+      });
+      if (!deps.channel.progress) {
+        await deps.channel.notify(current, `  → ${use.name} ${JSON.stringify(use.input)}`);
+      }
+      results.push(result);
     }
 
     // Тепер пауза, якщо модель попросила людину.
