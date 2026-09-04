@@ -134,7 +134,10 @@ async function loop(
     const ctx: ToolContext = {
       runId: current.id,
       root: deps.root,
-      approvedActions: new Set(),
+      // Дозволи, видані людиною раніше в цьому ж run. Порожній набір тут означав
+      // би, що ворота пропускають виклик, а реєстр його відхиляє — і агент
+      // упирався б у стіну після кожного підтвердження.
+      approvedActions: new Set(current.approved),
     };
 
     // Ворота дозволу: write-дія без згоди людини зупиняє цикл. Перевірка стоїть

@@ -163,6 +163,20 @@ const draft = (id: string): Run =>
   const approved = await resume(paused2.id, "так", withTool(scriptedLlm([fakeText("готово")])));
   check("згода виконує відкладену дію", created === 1, `створено ${created}`);
   check("дозвіл записаний у run", approved.approved.includes("create_issue"));
+
+  // Наступний виклик того самого інструмента має пройти без нової паузи:
+  // ворота дивляться в run.approved, реєстр — у ctx.approvedActions, і вони
+  // мусять бачити одне й те саме.
+  const after = await advance(
+    await storage.save({
+      ...approved,
+      status: "running",
+      messages: [...approved.messages, { role: "user", content: "ще раз" }],
+    }),
+    withTool(scriptedLlm([write, fakeText("готово")])),
+  );
+  check("повторний виклик після дозволу не питає знову", after.status === "done", after.status);
+  check("і справді виконується", created === 2, `створено ${created}`);
 }
 
 // 7b. кешування: параметр іде в запит, ціна враховує запис і читання

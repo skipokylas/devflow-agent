@@ -209,7 +209,7 @@ Channel   ──►  CliChannel           друк у stdout        (ще не �
 - [ ] `ask_human` реєстром не виконується
 - [ ] `access: write` без дозволу → `NotApproved`
 
-### G. Цикл, untrusted і трейс — `npm run try-loop` (37 перевірок)
+### G. Цикл, untrusted і трейс — `npm run try-loop` (39 перевірок)
 
 - [ ] помилка інструмента → `tool_result` з `is_error: true`, run іде далі
 - [ ] `maxSteps` вичерпано → `failed`
