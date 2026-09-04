@@ -39,6 +39,17 @@ const same = (a: TicketRef, b: TicketRef): boolean =>
 
 const active = (run: Run): boolean => run.status !== "done" && run.status !== "failed";
 
+/** Скільки днів завершену задачу ще можна продовжити коментарем. */
+const REOPEN_DAYS = Number(process.env["DEVFLOW_REOPEN_DAYS"] ?? 7);
+
+function recentlyActive(run: Run): boolean {
+  const stamp = run.lastCommentAt ?? run.createdAt;
+  if (!stamp) return false;
+
+  const age = (Date.now() - Date.parse(stamp)) / 86_400_000;
+  return Number.isFinite(age) && age <= REOPEN_DAYS;
+}
+
 /**
  * Один агент, одна активна робота. Але «чекає на людину» — не робота: щойно run
  * стає waiting_human, планувальник вільний і бере наступний квиток.
@@ -135,6 +146,11 @@ async function collectAnswers(ctx: Ctx): Promise<void> {
     // ліміт кроків, і тоді робота зроблена, а не втрачена. Інакше єдиним виходом
     // був би новий квиток і читання того самого коду заново.
     if (!["waiting_human", "done", "failed"].includes(run.status)) continue;
+
+    // Завершені прогони опитуються лише певний час. Інакше кожна колись зроблена
+    // задача перевіряється вічно: шість прогонів при опитуванні раз на 30 секунд
+    // це 17 тисяч запитів на добу, і число росте з кожною закритою задачею.
+    if (run.status !== "waiting_human" && !recentlyActive(run)) continue;
 
     const ticket = run.ticket;
 

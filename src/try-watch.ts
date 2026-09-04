@@ -305,6 +305,36 @@ check("у звіті видно текст уточнення", updated.includes
     check("модель отримала вивід команди", seenFailure.includes("помилкою"));
   }
 
+  // 3l. давно завершені прогони не опитуються вічно
+  {
+    const oldBoard = new InMemoryBoard([ticket("90", "стара задача")]);
+    const storage11 = new FileStorage(`${dir}/runs11`);
+    const deps11: Deps = { ...deps, storage: storage11 };
+    const ctx11 = ctxFor({ board: oldBoard, deps: deps11 });
+
+    await tick(ctx11);
+    const old = (await storage11.list())[0];
+    const longAgo = new Date(Date.now() - 40 * 86_400_000).toISOString();
+    if (old) {
+      await storage11.save({ ...old, status: "done", pending: null, lastCommentAt: longAgo, createdAt: longAgo });
+    }
+
+    let asked = 0;
+    const original = oldBoard.commentsSince.bind(oldBoard);
+    oldBoard.commentsSince = async (r, since) => {
+      asked++;
+      return original(r, since);
+    };
+
+    await tick(ctx11);
+    check("завершений місяць тому не опитується", asked === 0, `${asked} запитів`);
+
+    // Свіжий — опитується.
+    if (old) await storage11.save({ ...(await storage11.load(old.id)), lastCommentAt: new Date().toISOString() });
+    await tick(ctx11);
+    check("свіжий завершений опитується", asked === 1, `${asked} запитів`);
+  }
+
   // 3k. відповідь із термінала йде тим самим шляхом, що й коментар
   {
     const { replyTo } = await import("./scheduler");
