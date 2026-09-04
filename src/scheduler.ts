@@ -109,7 +109,10 @@ async function collectAnswers(ctx: Ctx): Promise<void> {
   const { deps, board, log } = ctx;
   for (const run of await deps.storage.list()) {
     if (!run.ticket) continue;
-    if (run.status !== "waiting_human" && run.status !== "done") continue;
+    // failed теж продовжується коментарем: найчастіша його причина — вичерпаний
+    // ліміт кроків, і тоді робота зроблена, а не втрачена. Інакше єдиним виходом
+    // був би новий квиток і читання того самого коду заново.
+    if (!["waiting_human", "done", "failed"].includes(run.status)) continue;
 
     const ticket = run.ticket;
 
@@ -132,8 +135,9 @@ async function collectAnswers(ctx: Ctx): Promise<void> {
         return;
       }
 
-      // Доопрацювання: та сама історія плюс нове прохання — модель памʼятає, що вже зробила.
-      log(`доопрацювання ${seen.id}: ${answer.body.slice(0, 60)}`);
+      // Доопрацювання або продовження після ліміту: та сама історія плюс нове
+      // прохання — модель памʼятає, що вже зробила.
+      log(`${seen.status === "failed" ? "продовження" : "доопрацювання"} ${seen.id}: ${answer.body.slice(0, 60)}`);
       const reopened = await deps.storage.save({
         ...seen,
         status: "queued",

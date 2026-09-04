@@ -21,7 +21,9 @@ export function buildDeps(overrides: Partial<Deps> = {}, remoteName = "origin"):
     tools: defaultTools,
     channel: new CliChannel(),
     model: process.env["MODEL"] ?? "claude-opus-5",
-    maxSteps: Number(process.env["MAX_STEPS"] ?? 8),
+    // Задача з написанням коду — це десятки дрібних правок і перевірок.
+    // Вісім кроків вистачало на аналіз і планування, але не на роботу.
+    maxSteps: Number(process.env["MAX_STEPS"] ?? 25),
     root: repo.root,
     system: promptOf(process.env["AGENT_PROMPT"] ?? "v6"),
     ...overrides,

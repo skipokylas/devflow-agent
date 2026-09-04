@@ -305,6 +305,34 @@ check("у звіті видно текст уточнення", updated.includes
     check("модель отримала вивід команди", seenFailure.includes("помилкою"));
   }
 
+  // 3j. вичерпаний ліміт кроків продовжується коментарем, робота не втрачається
+  {
+    const board4 = new InMemoryBoard([ticket("80", "довга задача")]);
+    const storage9 = new FileStorage(`${dir}/runs9`);
+
+    // Модель весь час просить інструмент — ліміт вичерпається.
+    const endless: Deps["llm"] = async ({ messages }) => {
+      const last = messages[messages.length - 1];
+      const text = typeof last?.content === "string" ? last.content : "";
+      if (text.includes("продовжуй")) return fakeText("Завершив.");
+      return fakeToolUse("read_file", { path: "package.json" }, `t_${messages.length}`);
+    };
+
+    const deps9: Deps = { ...deps, storage: storage9, llm: endless, maxSteps: 3 };
+    await tick(ctxFor({ board: board4, deps: deps9 }));
+
+    const stuck = (await storage9.list())[0];
+    check("ліміт вичерпано → failed", stuck?.status === "failed", stuck?.status);
+    check("причина названа", stuck?.error?.includes("maxSteps") === true, stuck?.error ?? "");
+
+    board4.reply(ref("80"), "продовжуй");
+    await tick(ctxFor({ board: board4, deps: deps9 }));
+
+    const resumed = await storage9.load(stuck?.id ?? "");
+    check("коментар продовжив роботу після ліміту", resumed.status === "done", resumed.status);
+    check("історія збереглася, не почалась заново", resumed.messages.length > (stuck?.messages.length ?? 0));
+  }
+
   // 3h. з remote і forge зміни доїжджають до PR
   {
     await exec("git", ["remote", "add", "origin", "https://example.invalid/org/repo.git"], { cwd: repoDir });

@@ -122,7 +122,15 @@ export function renderReport(run: Run, spans: Span[]): string {
     }
   }
 
-  if (run.error) out.push("", `**Помилка:** \`${run.error}\``, "");
+  if (run.error) {
+    const limit = run.error.includes("maxSteps");
+    out.push(
+      "",
+      `**${limit ? "Вичерпано ліміт кроків" : "Помилка"}:** \`${run.error}\``,
+      "",
+      limit ? "Напиши коментар, щоб продовжити з того ж місця — історія збережена." : "",
+    );
+  }
 
   if (s) {
     const seconds = (s.durationMs / 1000).toFixed(1);
