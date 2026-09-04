@@ -6,7 +6,7 @@ import { defaultTools } from "./agent/tools";
 import { InMemoryBoard } from "./board/memory";
 import type { Ticket, TicketRef } from "./board/types";
 import { FileStorage } from "./db/storage";
-import { recover, tick, type Ctx } from "./scheduler";
+import { recover, tick, watch, type Ctx } from "./scheduler";
 import { FileSink } from "./trace/sink";
 
 let failed = 0;
@@ -460,6 +460,27 @@ check("обірваний running повернувся в чергу", recovered
 const before = (await storage.list()).length;
 await tick(ctxFor({ board: board, deps: deps }));
 check("дублів не створено", (await storage.list()).length === before, `${before}`);
+
+// 11. збій дошки не вбиває демона
+{
+  const broken = new InMemoryBoard();
+  broken.ready = async () => {
+    throw new Error("мережа впала");
+  };
+
+  const lines: string[] = [];
+  const ctx = ctxFor({ board: broken, log: (l: string) => lines.push(l) });
+
+  let crashed = false;
+  try {
+    await watch(ctx, { intervalMs: 1, once: true });
+  } catch {
+    crashed = true;
+  }
+
+  check("збій дошки не валить watch", !crashed);
+  check("причина потрапила в лог", lines.some((l) => l.includes("мережа впала")), lines.join("; "));
+}
 
 console.log(failed === 0 ? "\nусі перевірки пройшли" : `\nпровалено: ${failed}`);
 process.exit(failed === 0 ? 0 : 1);

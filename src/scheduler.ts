@@ -79,11 +79,26 @@ export async function tick(ctx: Ctx): Promise<void> {
 
 export async function watch(ctx: Ctx, opts: WatchOptions): Promise<void> {
   await recover(ctx.deps, ctx.log);
+  let failures = 0;
 
   for (;;) {
-    await tick(ctx);
+    try {
+      await tick(ctx);
+      failures = 0;
+    } catch (err) {
+      // Демон не має вмирати від обриву мережі чи 500 від GitHub. Помилки в
+      // межах одного прогону ловить isolate; сюди долітають лише збої самої
+      // дошки — вони минають, а процес має жити далі.
+      failures++;
+      ctx.log(`оберт не вдався (${failures}): ${err instanceof Error ? err.message : String(err)}`);
+    }
+
     if (opts.once) return;
-    await new Promise((r) => setTimeout(r, opts.intervalMs));
+
+    // Після кількох поспіль невдач чекаємо довше: якщо GitHub лежить або
+    // вичерпано ліміт, довбати його раз на 30 секунд безглуздо.
+    const backoff = Math.min(failures, 5);
+    await new Promise((r) => setTimeout(r, opts.intervalMs * (backoff > 1 ? backoff : 1)));
   }
 }
 
