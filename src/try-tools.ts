@@ -98,5 +98,25 @@ const approved = await withWrite.execute("create_issue", { title: "тест" }, 
 });
 check("write з дозволом → виконується", approved === "створено");
 
+// 8. усі варіанти промпта валідні й типовий існує
+{
+  const { PROMPTS, promptOf } = await import("./agent/prompt");
+  check("варіантів промпта більше одного", Object.keys(PROMPTS).length >= 2);
+  check("типовий варіант існує", promptOf("v6").length > 0);
+
+  let unknown = false;
+  try {
+    promptOf("v999");
+  } catch {
+    unknown = true;
+  }
+  check("невідомий варіант → помилка з переліком", unknown);
+
+  const v6 = promptOf("v6");
+  check("v6 вчить перевіряти зміни", v6.includes("run_command typecheck"));
+  check("v6 забороняє git-команди для PR", v6.includes("Гілку, коміт і PR робить не ти"));
+  check("v6 задає мову відповіді", v6.includes("українською"));
+}
+
 console.log(failed === 0 ? "\nусі перевірки пройшли" : `\nпровалено: ${failed}`);
 process.exit(failed === 0 ? 0 : 1);

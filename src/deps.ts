@@ -23,7 +23,7 @@ export function buildDeps(overrides: Partial<Deps> = {}, remoteName = "origin"):
     model: process.env["MODEL"] ?? "claude-opus-5",
     maxSteps: Number(process.env["MAX_STEPS"] ?? 8),
     root: repo.root,
-    system: promptOf(process.env["AGENT_PROMPT"] ?? "v5"),
+    system: promptOf(process.env["AGENT_PROMPT"] ?? "v6"),
     ...overrides,
   };
 }

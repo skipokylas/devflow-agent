@@ -197,7 +197,7 @@ Channel   ──►  CliChannel           друк у stdout        (ще не �
 - [ ] `npm run memory` — на друге питання відповідає правильно, `input_tokens` другого виклику більший за перший
 - [ ] порівняй вартість: той самий `ping` з `claude-haiku-4-5` замість `claude-opus-5`
 
-### F. Реєстр інструментів — `npm run try-tools` (14 перевірок)
+### F. Реєстр інструментів — `npm run try-tools` (20 перевірок)
 
 - [ ] `read_file` повертає справжній вміст
 - [ ] `list_files` показує дерево й пропускає `node_modules`
