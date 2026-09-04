@@ -130,6 +130,19 @@ say(
     : "",
 );
 
+// Типові значення в коді й у підказці розходяться тихо: я змінив MAX_STEPS на 25
+// у deps.ts і лишив «типово 8» в usage.
+const depsBody = await fs.readFile("src/deps.ts", "utf8");
+const cliBody = await fs.readFile("src/cli.ts", "utf8");
+
+const drifted: string[] = [];
+for (const m of depsBody.matchAll(/process\.env\["(\w+)"\]\s*\?\?\s*(\d+)/g)) {
+  const [, name, value] = m;
+  const hint = new RegExp(`${name}=[^\\n]*типово (\\d+)`).exec(cliBody);
+  if (hint && hint[1] !== value) drifted.push(`${name}: код ${value}, підказка ${hint[1]}`);
+}
+say(drifted.length === 0, "типові значення збігаються з підказкою", drifted.join("; "));
+
 const claude = docs[0]?.[1] ?? "";
 const commands = ["run", "reply", "retry", "board", "watch", "list", "trace", "show", "auth", "init"];
 const undocumented = commands.filter((c) => !claude.includes(`devflow ${c}`));

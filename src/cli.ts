@@ -91,7 +91,7 @@ function usage(): void {
   AGENT_BOARD=memory  дошка в памʼяті замість GitHub (для перевірок)
   GITHUB_TOKEN     токен зі scope repo і project
   MODEL=...        модель (типово claude-opus-5)
-  MAX_STEPS=...    ліміт кроків циклу (типово 8)
+  MAX_STEPS=...    ліміт кроків циклу (типово 25)
   DEVFLOW_PORT=... порт для devflow serve (типово ${DEFAULT_PORT})
   DEVFLOW_SERVE_URL=...  зовнішня адреса serve; тоді у звіті буде посилання на трейс`);
 }

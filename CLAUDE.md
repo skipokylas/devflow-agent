@@ -746,6 +746,7 @@ devflow tick                # один оберт планувальника і 
 devflow watch               # той самий оберт у циклі
 devflow list                # усі runs цього репозиторію
 devflow trace <id>          # дерево кроків, час і вартість
+devflow serve               # ті самі трейси по HTTP: / і /trace/<runId>
 devflow show <id>
 
 npm run check               # перед комітом: типи, сценарії, гігієна, документи
