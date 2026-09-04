@@ -19,7 +19,8 @@
     "try-github": "tsx src/try-github.ts",
     "try-guard": "tsx src/try-guard.ts",
     "try-init": "tsx src/try-init.ts",
-    "check": "tsx src/check.ts"
+    "check": "tsx src/check.ts",
+    "try-workspace": "tsx src/try-workspace.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",

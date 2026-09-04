@@ -16,6 +16,19 @@ export type ToolContext = {
   approvedActions: Set<string>;
 };
 
+/**
+ * Команди, які агент може запускати. Перелік закритий навмисно: дозвіл на
+ * `run_command` інакше означав би дозвіл на будь-що, включно з `rm -rf` і
+ * `git push --force`. Ворота підтверджують дію, а не видають ключі від системи.
+ */
+export const ALLOWED_COMMANDS: Record<string, string[]> = {
+  typecheck: ["npm", "run", "typecheck"],
+  check: ["npm", "run", "check"],
+  test: ["npm", "test"],
+  "git status": ["git", "status", "--porcelain"],
+  "git diff": ["git", "diff"],
+};
+
 export type Tool = {
   name: string;
   description: string;
@@ -182,4 +195,89 @@ export const listFiles = defineTool({
   },
 });
 
+export const writeFile = defineTool({
+  name: "write_file",
+  description:
+    "Створити файл або замінити його вміст цілком. Для точкової правки бери edit_file — " +
+    "перезапис великого файлу цілим текстом марнує токени й губить чужі зміни.",
+  access: "write",
+  input: z.object({
+    path: z.string().describe("Шлях відносно кореня, наприклад src/serve.ts"),
+    content: z.string().describe("Повний новий вміст файлу"),
+  }),
+  execute: async ({ path: rel, content }, ctx) => {
+    const target = resolveInRoot(ctx, rel);
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, content, "utf8");
+    return `записано ${rel} (${content.split("\n").length} рядків)`;
+  },
+});
+
+export const editFile = defineTool({
+  name: "edit_file",
+  description:
+    "Замінити фрагмент у файлі. old має траплятися рівно один раз — інакше правка " +
+    "неоднозначна й буде відхилена. Бери більше контексту, щоб фрагмент став унікальним.",
+  access: "write",
+  input: z.object({
+    path: z.string(),
+    old: z.string().min(1).describe("Точний фрагмент, який замінюємо"),
+    new: z.string().describe("Чим замінюємо"),
+  }),
+  execute: async ({ path: rel, old, new: replacement }, ctx) => {
+    const target = resolveInRoot(ctx, rel);
+    const text = await fs.readFile(target, "utf8");
+
+    const count = text.split(old).length - 1;
+    if (count === 0) throw new Error(`фрагмент не знайдено у ${rel}`);
+    if (count > 1) throw new Error(`фрагмент трапляється ${count} ${count < 5 ? "рази" : "разів"} у ${rel}; додай контексту`);
+
+    await fs.writeFile(target, text.replace(old, replacement), "utf8");
+    return `змінено ${rel}`;
+  },
+});
+
+export const runCommand = defineTool({
+  name: "run_command",
+  description:
+    `Запустити перевірку в робочій копії. Дозволені: ${Object.keys(ALLOWED_COMMANDS).join(", ")}. ` +
+    "Довільні команди не приймаються.",
+  access: "write",
+  input: z.object({
+    command: z.enum(Object.keys(ALLOWED_COMMANDS) as [string, ...string[]]),
+  }),
+  execute: async ({ command }, ctx) => {
+    const argv = ALLOWED_COMMANDS[command];
+    if (!argv) throw new Error(`команда ${command} не дозволена`);
+
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+
+    try {
+      const { stdout, stderr } = await promisify(execFile)(argv[0]!, argv.slice(1), {
+        cwd: ctx.root,
+        maxBuffer: 4 * 1024 * 1024,
+        timeout: 5 * 60_000,
+      });
+      return trim(`${stdout}${stderr}`) || "готово, вивід порожній";
+    } catch (err) {
+      // Провалена перевірка — це результат, а не збій: модель має побачити вивід.
+      const e = err as { stdout?: string; stderr?: string; message?: string };
+      return `команда завершилась помилкою:\n${trim(`${e.stdout ?? ""}${e.stderr ?? ""}` || (e.message ?? ""))}`;
+    }
+  },
+});
+
+const trim = (text: string): string => (text.length > 8000 ? `${text.slice(-8000)}\n…(показано кінець)` : text.trim());
+
 export const defaultTools = new ToolRegistry([askHuman, listFiles, readFile]);
+
+/** Реєстр для роботи з кодом: до читання додаються правки й перевірки. */
+export const codingTools = new ToolRegistry([
+  askHuman,
+  listFiles,
+  readFile,
+  writeFile,
+  editFile,
+  runCommand,
+]);
