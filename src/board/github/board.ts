@@ -90,9 +90,10 @@ export class GitHubBoard implements Board {
       url: issue.html_url,
     };
 
-    // Створений issue сам на дошці не зʼявиться — додаємо і ставимо колонку.
+    // Створений issue сам на дошці не зʼявиться — додаємо і кладемо в backlog:
+    // агент пропонує роботу, а запускає її людина, перетягуючи в Ready.
     const itemId = await this.projects.add(issue.node_id);
-    await this.projects.setStatus(itemId, "todo");
+    await this.projects.setStatus(itemId, "backlog");
     return ref;
   }
 

@@ -33,6 +33,7 @@ export const configSchema = z.object({
       finishStatus: z.enum(["in_review", "done"]).default("in_review"),
       /** Назви колонок поля Status у Projects v2. */
       statuses: z.record(ticketStatusSchema, z.string()).default({
+        backlog: "Backlog",
         todo: "Ready",
         in_progress: "In progress",
         in_review: "In review",

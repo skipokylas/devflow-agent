@@ -169,9 +169,8 @@ check("у звіті видно текст уточнення", updated.includes
 
   planBoard.reply(ref("42"), "так");
   await tick(deps4, planBoard, log);
-  const created = await planBoard.ready();
-  check("після згоди підзадачі створені", created.length === 2, `${created.length}`);
-  check("підзадачі лягли в todo", created.every((t) => t.status === "todo"));
+  check("після згоди підзадачі створені", (await planBoard.findByMarker("task:2")) !== null);
+  check("підзадачі не потрапили в чергу", (await planBoard.ready()).length === 0);
 }
 
 // 4. відновлення після простою

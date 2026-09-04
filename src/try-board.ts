@@ -72,11 +72,12 @@ check("невалідний url → помилка схеми", !noUrl.success);
   };
 
   const first = await registry.execute("create_issues", plan, ctx);
-  check("створено дві підзадачі", (await fresh.ready()).length === 2, first.replace(/\n/g, " | "));
+  check("створено дві підзадачі", /#\d+.*#\d+/s.test(first), first.replace(/\n/g, " | "));
+check("підзадачі лягли в backlog, не в роботу", (await fresh.ready()).length === 0);
   check("у відповіді номери issues", /#\d+ створено/.test(first));
 
   const again = await registry.execute("create_issues", plan, ctx);
-  check("повторний виклик не дублює", (await fresh.ready()).length === 2);
+  check("повторний виклик не дублює", (again.match(/вже існує/g) ?? []).length === 2);
   check("повторний виклик каже «вже існує»", again.includes("вже існує"));
 
   // 6. схема плану відкидає халтуру ще до створення
@@ -94,7 +95,7 @@ check("невалідний url → помилка схеми", !noUrl.success);
     }
   }
   check("порожній план і халтурні задачі відкидаються", rejected === 3, `${rejected} з 3`);
-  check("нічого зайвого не створено", (await fresh.ready()).length === 2);
+  check("нічого зайвого не створено", (await fresh.findByMarker("task:3")) === null);
 }
 
 console.log(failed === 0 ? "\nусі перевірки пройшли" : `\nпровалено: ${failed}`);

@@ -13,6 +13,7 @@ const PROVIDER_BY_HOST: Record<string, "github" | "gitlab"> = {
 };
 
 const DEFAULT_COLUMNS: Record<TicketStatus, string> = {
+  backlog: "Backlog",
   todo: "Ready",
   in_progress: "In progress",
   in_review: "In review",

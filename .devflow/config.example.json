@@ -6,6 +6,7 @@
     "ownerType": "user",
     "projectNumber": 0,
     "statuses": {
+      "backlog": "Backlog",
       "todo": "Ready",
       "in_progress": "In progress",
       "in_review": "In review",

@@ -57,7 +57,7 @@ export class InMemoryBoard implements Board {
       ref,
       title: input.title,
       body: input.body,
-      status: "todo",
+      status: "backlog",
       labels: input.labels ?? [],
       updatedAt: new Date().toISOString(),
     });
