@@ -16,6 +16,7 @@ import { GitHubForge } from "./forge/github";
 import { init } from "./init";
 import { recover, tick, watch, type Ctx } from "./scheduler";
 import { serve, DEFAULT_PORT } from "./serve";
+import { openTunnel, rememberServeUrl } from "./tunnel";
 import { RunNotFound } from "./db/storage";
 import { summary, toHtml, toText } from "./trace/render";
 import { newRun } from "./agent/run";
@@ -38,6 +39,7 @@ const KNOWN_VARS = [
   "WATCH_INTERVAL",
   "DEVFLOW_PORT",
   "DEVFLOW_SERVE_URL",
+  "DEVFLOW_TUNNEL",
   "GITHUB_TOKEN",
   "ANTHROPIC_API_KEY",
 ];
@@ -93,7 +95,8 @@ function usage(): void {
   MODEL=...        модель (типово claude-opus-5)
   MAX_STEPS=...    ліміт кроків циклу (типово 25)
   DEVFLOW_PORT=... порт для devflow serve (типово ${DEFAULT_PORT})
-  DEVFLOW_SERVE_URL=...  зовнішня адреса serve; тоді у звіті буде посилання на трейс`);
+  DEVFLOW_SERVE_URL=...  зовнішня адреса serve; тоді у звіті буде посилання на трейс
+  DEVFLOW_TUNNEL=1 підняти тунель cloudflared і записати адресу автоматично`);
 }
 
 async function cmdRun(args: string[]): Promise<void> {
@@ -265,8 +268,23 @@ async function cmdTrace(args: string[]): Promise<void> {
 /** Ті самі трейси, що й `devflow trace`, тільки за посиланням: з телефона й з квитка. */
 async function cmdServe(): Promise<void> {
   const port = Number(process.env["DEVFLOW_PORT"] ?? DEFAULT_PORT);
+  const log = (line: string): void => console.log(line);
   console.log(`${repo.id}  трейси з ${traceDir}\n`);
-  await serve({ storage, trace, port, log: (line: string) => console.log(line) });
+
+  // Тунель піднімається до сервера: адреса потрібна планувальнику вже зараз,
+  // а не після того, як хтось відкриє першу сторінку.
+  const tunnel = process.env["DEVFLOW_TUNNEL"] === "1" ? await openTunnel(port, log) : null;
+  if (tunnel) {
+    await rememberServeUrl(tunnel.url);
+    console.log(`ззовні: ${tunnel.url}  (записано в DEVFLOW_SERVE_URL)\n`);
+  }
+
+  try {
+    await serve({ storage, trace, port, log });
+  } finally {
+    tunnel?.stop();
+    if (tunnel) await rememberServeUrl(null);
+  }
 }
 
 async function cmdShow(args: string[]): Promise<void> {
