@@ -30,6 +30,18 @@ check("робоча копія створена", await fs.stat(ws.path).then(()
 check("гілка названа за run", ws.branch === "devflow/run_ws");
 check("файли на місці", (await fs.readFile(path.join(ws.path, "a.txt"), "utf8")).includes("перший"));
 
+// 1a. залежності доступні в копії: без них ворота якості падали б завжди
+await fs.mkdir(path.join(repo, "node_modules", "@types"), { recursive: true });
+await fs.writeFile(path.join(repo, "node_modules", "marker.txt"), "залежність");
+const ws2 = await createWorkspace(repo, "run_deps", path.join(base, "wt"));
+check(
+  "node_modules видно з робочої копії",
+  await fs.readFile(path.join(ws2.path, "node_modules", "marker.txt"), "utf8").then(
+    (t) => t === "залежність",
+    () => false,
+  ),
+);
+
 // 2. повторний виклик не падає, а підхоплює наявне
 const again = await createWorkspace(repo, "run_ws", path.join(base, "wt"));
 check("повторний виклик підхоплює наявне дерево", again.path === ws.path);

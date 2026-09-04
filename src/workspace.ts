@@ -46,7 +46,31 @@ export async function createWorkspace(
   await fs.mkdir(baseDir, { recursive: true });
   const base = (await git(["rev-parse", "--abbrev-ref", "HEAD"], repoRoot)).trim();
   await git(["worktree", "add", "-b", branch, dir, base], repoRoot);
+  await linkDependencies(repoRoot, dir);
   return { path: dir, branch };
+}
+
+/**
+ * `git worktree` переносить лише відстежувані файли, а `node_modules` у
+ * .gitignore. Без цього `tsc` не знаходить @types/node і падає з TS2688 ще до
+ * перевірки будь-якого коду — тобто ворота якості провалювались би завжди,
+ * незалежно від змін. Симлінк дешевший за `npm ci` у кожній копії.
+ */
+async function linkDependencies(repoRoot: string, dir: string): Promise<void> {
+  const source = path.join(repoRoot, "node_modules");
+  if (!(await fs.stat(source).then(() => true, () => false))) return;
+
+  await fs.symlink(source, path.join(dir, "node_modules"), "dir").catch(() => {});
+
+  // Виключаємо локально, а не через .gitignore проєкту: інакше в репозиторії,
+  // де node_modules не ігнорується, симлінк робив би копію завжди «брудною» —
+  // і потрапив би в коміт.
+  const exclude = (await git(["rev-parse", "--git-path", "info/exclude"], dir)).trim();
+  const file = path.isAbsolute(exclude) ? exclude : path.join(dir, exclude);
+  await fs.mkdir(path.dirname(file), { recursive: true });
+
+  const current = await fs.readFile(file, "utf8").catch(() => "");
+  if (!current.includes("/node_modules")) await fs.appendFile(file, "/node_modules\n");
 }
 
 /** Прибирає дерево, якщо в ньому нічого не змінилось: сміття не накопичується. */
