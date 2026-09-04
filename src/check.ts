@@ -56,7 +56,41 @@ for (const file of tracked) {
 }
 say(leaks.length === 0, "у відстежуваних файлах немає токенів", leaks.join(", "));
 
-// ── 3. документи ──────────────────────────────────────────────────────────
+// ── 3. архітектура ────────────────────────────────────────────────────────
+// Правило «стрілки залежностей ідуть тільки вниз» перевіряється машиною, бо
+// інакше воно тримається на памʼяті й ламається тихо.
+
+const CORE = ["src/agent/loop.ts", "src/agent/tools.ts", "src/agent/types.ts", "src/scheduler.ts"];
+const CONCRETE = /FileStorage|GitHubBoard|GitHubForge|FileSink|CliChannel|InMemory/;
+
+/** Значущі імпорти: `import type` стирається при компіляції й звʼязку не створює. */
+function valueImports(body: string): { from: string; what: string }[] {
+  return [...body.matchAll(/^import\s+(?!type\s)(.+?)\s+from\s+"([^"]+)"/gm)].map((m) => ({
+    what: m[1] ?? "",
+    from: m[2] ?? "",
+  }));
+}
+
+const coreLeaks: string[] = [];
+for (const file of CORE) {
+  const body = await fs.readFile(file, "utf8").catch(() => "");
+  for (const imported of valueImports(body)) {
+    if (CONCRETE.test(imported.what)) coreLeaks.push(`${file} → ${imported.what.trim()}`);
+  }
+}
+say(coreLeaks.length === 0, "ядро не тягне конкретні реалізації", coreLeaks.join("; "));
+
+const PORTS = ["src/board/board.ts", "src/forge/forge.ts", "src/agent/channel.ts", "src/db/storage.ts", "src/trace/sink.ts"];
+const portLeaks: string[] = [];
+for (const file of PORTS) {
+  const body = await fs.readFile(file, "utf8").catch(() => "");
+  const imports = [...body.matchAll(/from "([^"]+)"/g)].map((m) => m[1] ?? "");
+  const bad = imports.filter((i) => /github|gitlab|trello/i.test(i));
+  if (bad.length) portLeaks.push(`${file} → ${bad.join(", ")}`);
+}
+say(portLeaks.length === 0, "порти не залежать від постачальників", portLeaks.join("; "));
+
+// ── 4. документи ──────────────────────────────────────────────────────────
 const docs = await Promise.all(
   ["CLAUDE.md", "CHECKLIST.md"].map(async (f) => [f, await fs.readFile(f, "utf8")] as const),
 );

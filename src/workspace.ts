@@ -62,6 +62,17 @@ export async function removeIfClean(repoRoot: string, workspace: Workspace): Pro
   return true;
 }
 
+export async function commitAll(workspace: Workspace, message: string): Promise<boolean> {
+  if ((await git(["status", "--porcelain"], workspace.path)).trim() === "") return false;
+  await git(["add", "-A"], workspace.path);
+  await git(["commit", "-q", "-m", message], workspace.path);
+  return true;
+}
+
+export async function baseBranch(repoRoot: string): Promise<string> {
+  return (await git(["rev-parse", "--abbrev-ref", "HEAD"], repoRoot)).trim();
+}
+
 export async function changedFiles(workspace: Workspace): Promise<string[]> {
   const out = await git(["status", "--porcelain"], workspace.path);
   return out

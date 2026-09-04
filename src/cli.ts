@@ -12,8 +12,9 @@ import { InMemoryBoard } from "./board/memory";
 import { GitHubBoard } from "./board/github/board";
 import type { Board } from "./board/board";
 import { loadConfig } from "./config";
+import { GitHubForge } from "./forge/github";
 import { init } from "./init";
-import { recover, tick, watch } from "./scheduler";
+import { recover, tick, watch, type Ctx } from "./scheduler";
 import { RunNotFound } from "./db/storage";
 import { summary, toHtml, toText } from "./trace/render";
 import { newRun } from "./agent/run";
@@ -140,19 +141,38 @@ async function buildBoard(): Promise<Board> {
 
 /** Один оберт і вихід: для ручного контролю або cron замість постійного процесу. */
 async function cmdTick(): Promise<void> {
-  const board = process.env["AGENT_BOARD"] === "memory" ? new InMemoryBoard() : await buildBoard();
+  const ctx = await buildCtx();
+  await recover(deps, ctx.log);
+  await tick(ctx);
+}
+
+async function buildCtx(): Promise<Ctx> {
   const config = await loadConfig(repo.root, repo.id);
-  await recover(deps, (line) => console.log(line));
-  await tick(deps, board, (line) => console.log(line), repo, config.board?.finishStatus);
+  return {
+    deps,
+    ...(await buildServices()),
+    repo,
+    log: (line: string) => console.log(line),
+    finishStatus: config.board?.finishStatus ?? "in_review",
+  };
+}
+
+async function buildServices() {
+  const config = await loadConfig(repo.root, repo.id);
+  const token = process.env["GITHUB_TOKEN"];
+
+  if (process.env["AGENT_BOARD"] === "memory") return { board: new InMemoryBoard() };
+  const board = await buildBoard();
+  return {
+    board,
+    forge: token && config.board ? new GitHubForge(config.board.scope, token) : undefined,
+  };
 }
 
 async function cmdWatch(): Promise<void> {
-  const board = process.env["AGENT_BOARD"] === "memory" ? new InMemoryBoard() : await buildBoard();
   const interval = Number(process.env["WATCH_INTERVAL"] ?? 30) * 1000;
-
   console.log(`${repo.id}  опитування раз на ${interval / 1000}с, Ctrl+C щоб зупинити\n`);
-  const config = await loadConfig(repo.root, repo.id);
-  await watch(deps, board, { intervalMs: interval, repo, finishStatus: config.board?.finishStatus });
+  await watch(await buildCtx(), { intervalMs: interval });
 }
 
 /** Записує секрети в ~/.devflow/.env з правами 0600. Наявні значення підставляє як типові. */

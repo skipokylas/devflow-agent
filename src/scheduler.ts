@@ -1,15 +1,27 @@
 import { advance, resume, type Deps } from "./agent/loop";
 import { newRun } from "./agent/run";
 import { toolsWithBoard } from "./agent/tools-board";
+import { codingTools } from "./agent/tools";
+import {
+  baseBranch,
+  changedFiles,
+  commitAll,
+  createWorkspace,
+  removeIfClean,
+  type Workspace,
+} from "./workspace";
+import { stateDir, type RepoRef } from "./repo";
 import { untrusted } from "./agent/tools";
 import type { Run } from "./agent/types";
 import type { Board } from "./board/board";
+import type { Forge } from "./forge/forge";
 import type { Ticket, TicketRef, TicketStatus } from "./board/types";
 import { BoardChannel } from "./channel/board";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { renderReport } from "./report";
 import { TicketGone } from "./board/board";
 import { LiveChannel } from "./channel/live";
-import type { RepoRef } from "./repo";
 import { bindingOf } from "./guard";
 
 /** Куди переводити картку після успішного завершення. */
@@ -31,28 +43,34 @@ const active = (run: Run): boolean => run.status !== "done" && run.status !== "f
  * Один агент, одна активна робота. Але «чекає на людину» — не робота: щойно run
  * стає waiting_human, планувальник вільний і бере наступний квиток.
  */
-export async function tick(
-  deps: Deps,
-  board: Board,
-  log: (l: string) => void,
-  repo?: RepoRef,
-  finishStatus: TicketStatus = "in_review",
-): Promise<void> {
-  await intake(deps, board, log, repo);
-  await collectAnswers(deps, board, log, finishStatus);
-  await advanceQueue(deps, board, log, finishStatus);
+/** Дошка й forge разом: дві різні системи, які планувальник використовує поруч. */
+export type Services = { board: Board; forge?: Forge };
+
+/**
+ * Усе, що потрібно оберту. Раніше це були шість-вісім параметрів, які
+ * протягувались крізь пʼять функцій — сигнатури такої довжини означають
+ * сутність, якій не дали назви.
+ */
+export type Ctx = {
+  deps: Deps;
+  board: Board;
+  forge?: Forge;
+  repo?: RepoRef;
+  log: (line: string) => void;
+  finishStatus: TicketStatus;
+};
+
+export async function tick(ctx: Ctx): Promise<void> {
+  await intake(ctx);
+  await collectAnswers(ctx);
+  await advanceQueue(ctx);
 }
 
-export async function watch(
-  deps: Deps,
-  board: Board,
-  opts: WatchOptions & { repo?: RepoRef; finishStatus?: TicketStatus },
-): Promise<void> {
-  const log = opts.log ?? ((l: string) => console.log(l));
-  await recover(deps, log);
+export async function watch(ctx: Ctx, opts: WatchOptions): Promise<void> {
+  await recover(ctx.deps, ctx.log);
 
   for (;;) {
-    await tick(deps, board, log, opts.repo, opts.finishStatus);
+    await tick(ctx);
     if (opts.once) return;
     await new Promise((r) => setTimeout(r, opts.intervalMs));
   }
@@ -68,7 +86,7 @@ export async function recover(deps: Deps, log: (l: string) => void): Promise<voi
 }
 
 /** Нові квитки зі списку готових стають runs. Дублі відсікаються за ticket ref. */
-async function intake(deps: Deps, board: Board, log: (l: string) => void, repo?: RepoRef): Promise<void> {
+async function intake({ deps, board, log, repo }: Ctx): Promise<void> {
   const runs = await deps.storage.list();
 
   for (const ticket of await board.ready()) {
@@ -87,12 +105,8 @@ async function intake(deps: Deps, board: Board, log: (l: string) => void, repo?:
  * і доопрацювання вже завершеної задачі. Різниця лише в тому, як текст лягає
  * в історію: як tool_result чи як нове user-повідомлення.
  */
-async function collectAnswers(
-  deps: Deps,
-  board: Board,
-  log: (l: string) => void,
-  finishStatus: TicketStatus,
-): Promise<void> {
+async function collectAnswers(ctx: Ctx): Promise<void> {
+  const { deps, board, log } = ctx;
   for (const run of await deps.storage.list()) {
     if (!run.ticket) continue;
     if (run.status !== "waiting_human" && run.status !== "done") continue;
@@ -112,7 +126,9 @@ async function collectAnswers(
 
       if (seen.status === "waiting_human") {
         log(`відповідь на ${seen.id}: ${answer.body.slice(0, 60)}`);
-        await finish(deps, board, await resume(seen.id, answer.body, withChannel(deps, board, seen)), log, finishStatus);
+        await execute(ctx, seen, (runDeps) =>
+          resume(seen.id, answer.body, runDeps),
+        );
         return;
       }
 
@@ -123,9 +139,104 @@ async function collectAnswers(
         status: "queued",
         messages: [...seen.messages, { role: "user", content: answer.body }],
       });
-      await finish(deps, board, await advance(reopened, withChannel(deps, board, reopened)), log, finishStatus);
+      await execute(ctx, reopened, (runDeps) =>
+        advance(reopened, runDeps),
+      );
     });
   }
+}
+
+/**
+ * Ворота якості: якщо агент щось змінив, зміни мусять хоча б компілюватись.
+ * Провал не завершує роботу мовчки — вивід повертається в модель, і вона має
+ * одну спробу виправитись. Друга спроба означала б цикл із невідомою ціною.
+ */
+async function gate(run: Run, workspace: Workspace, deps: Deps, log: (l: string) => void): Promise<Run> {
+  // deps тут — саме runDeps із робочою копією в root, а не загальні.
+  if (run.status !== "done") return run;
+
+  const changed = await changedFiles(workspace);
+  if (changed.length === 0) return run;
+
+  // Ворота мають сенс лише там, де є що запускати: у чужому репо без package.json
+  // або без скрипта typecheck це був би гарантований провал ні за що.
+  const script = await hasScript(workspace.path, "typecheck");
+  if (!script) {
+    log(`${run.id}: ${changed.length} змінених файлів, скрипта typecheck немає — ворота пропущено`);
+    return run;
+  }
+
+  log(`${run.id}: перевіряю ${changed.length} змінених файлів`);
+  const output = await deps.tools.execute(
+    "run_command",
+    { command: "typecheck" },
+    { runId: run.id, root: workspace.path, approvedActions: new Set(["run_command"]) },
+  );
+
+  if (!output.includes("помилкою")) return run;
+
+  log(`${run.id}: ворота не пройдено, віддаю моделі на виправлення`);
+  const retry = await deps.storage.save({
+    ...run,
+    status: "running",
+    messages: [
+      ...run.messages,
+      {
+        role: "user",
+        content: `Перевірка typecheck не пройшла. Виправ і перевір ще раз.\n\n${output}`,
+      },
+    ],
+  });
+  return advance(retry, deps);
+}
+
+async function hasScript(dir: string, name: string): Promise<boolean> {
+  try {
+    const raw = await fs.readFile(path.join(dir, "package.json"), "utf8");
+    return Boolean((JSON.parse(raw) as { scripts?: Record<string, string> }).scripts?.[name]);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Зміни, що пройшли ворота, стають PR. Коміт і пуш робить код, а не модель:
+ * інструмент `git push` дав би їй право пушити куди завгодно.
+ */
+async function deliver(ctx: Ctx, run: Run, workspace: Workspace, repo: RepoRef): Promise<Run> {
+  const { deps, forge, log } = ctx;
+  if (run.status !== "done" || !run.ticket || !forge) return run;
+
+  const changed = await changedFiles(workspace);
+  if (changed.length === 0) return run;
+
+  if (!repo.remote) {
+    log(`${run.id}: зміни є, але в репозиторії немає remote — гілка лишається локальною`);
+    return run;
+  }
+
+  const title = `${run.ticket.externalId}: ${firstLine(run)}`;
+  await commitAll(workspace, `${title}\n\nvia devflow ${run.id}`);
+  await forge.pushBranch({ cwd: workspace.path, branch: workspace.branch, remote: repo.remote });
+
+  const pull = await forge.openPullRequest({
+    branch: workspace.branch,
+    title,
+    base: await baseBranch(repo.root),
+    body: `Closes #${run.ticket.externalId}\n\nЗмінено файлів: ${changed.length}\n\nvia devflow \`${run.id}\``,
+  });
+
+  log(`${run.id}: PR ${pull.url}`);
+  return deps.storage.save({
+    ...run,
+    messages: [...run.messages, { role: "user", content: `PR відкрито: ${pull.url}` }],
+  });
+}
+
+function firstLine(run: Run): string {
+  const first = run.messages[0];
+  const text = typeof first?.content === "string" ? first.content : "";
+  return (text.split("\n")[0] ?? "задача").replace(/^Задача з квитка \d+:\s*/, "").slice(0, 60);
 }
 
 /**
@@ -156,12 +267,8 @@ async function isolate(
  * Стеля — кількість завдань на початок оберту: якщо робота породжує нові
  * задачі, вони почекають наступного разу, і цикл не піде вразнос.
  */
-async function advanceQueue(
-  deps: Deps,
-  board: Board,
-  log: (l: string) => void,
-  finishStatus: TicketStatus,
-): Promise<void> {
+async function advanceQueue(ctx: Ctx): Promise<void> {
+  const { deps, board, log } = ctx;
   const initial = (await deps.storage.list()).filter((r) => r.status === "queued").length;
 
   for (let done = 0; done < initial; done++) {
@@ -178,8 +285,34 @@ async function advanceQueue(
     await isolate(deps, next, log, async () => {
       if (next.ticket) await board.setStatus(next.ticket, "in_progress");
       const started = await deps.storage.save({ ...next, status: "running" });
-      await finish(deps, board, await advance(started, withChannel(deps, board, next)), log, finishStatus);
+      await execute(ctx, started, (runDeps) =>
+        advance(started, runDeps),
+      );
     });
+  }
+}
+
+/**
+ * Спільна обгортка для першого запуску й для продовження після паузи. Раніше
+ * продовження йшло без робочої копії, і правки після дозволу лягали в теку
+ * користувача.
+ */
+async function execute(ctx: Ctx, run: Run, work: (runDeps: Deps) => Promise<Run>): Promise<void> {
+  const { deps, board, forge, repo, log, finishStatus } = ctx;
+  const workspace = await workspaceFor(deps, run, repo, log);
+  const runDeps = forRun(deps, board, run, workspace);
+
+  let done = await work(runDeps);
+
+  if (workspace && repo) {
+    done = await gate(done, workspace, runDeps, log);
+    done = await deliver(ctx, done, workspace, repo);
+  }
+
+  await finish(deps, board, done, log, finishStatus);
+
+  if (workspace && repo && (await removeIfClean(repo.root, workspace))) {
+    log(`${run.id}: змін немає, копію прибрано`);
   }
 }
 
@@ -223,14 +356,33 @@ async function publishReport(deps: Deps, board: Board, run: Run): Promise<Run> {
   return deps.storage.save({ ...run, report: { commentId } });
 }
 
-/** У режимі планувальника агент має дошку: звідси і канал, і вміння створювати підзадачі. */
-function withChannel(deps: Deps, board: Board, run: Run): Deps {
+/**
+ * У режимі планувальника агент має дошку й окрему робочу копію: звідси канал,
+ * уміння створювати підзадачі й право правити код.
+ */
+function forRun(deps: Deps, board: Board, run: Run, workspace: Workspace | null): Deps {
   if (!run.ticket) return deps;
   return {
     ...deps,
     channel: new LiveChannel(new BoardChannel(board, run.ticket)),
-    tools: toolsWithBoard(deps.tools, board, run.id),
+    tools: toolsWithBoard(codingTools, board, run.id),
+    ...(workspace ? { root: workspace.path } : {}),
   };
+}
+
+/**
+ * Робоча копія на кожен прогін планувальника. Створюється завжди, а не за
+ * потреби: інакше читання йшло б із однієї теки, а правки — в іншу, і модель
+ * бачила б не той стан, який змінює.
+ */
+async function workspaceFor(deps: Deps, run: Run, repo: RepoRef | undefined, log: (l: string) => void) {
+  if (!repo) return null;
+  try {
+    return await createWorkspace(repo.root, run.id, path.join(stateDir(repo), "wt"));
+  } catch (err) {
+    log(`${run.id}: робочу копію створити не вдалось (${err instanceof Error ? err.message : err})`);
+    return null;
+  }
 }
 
 function runFor(ticket: Ticket, repo?: RepoRef): Run {
