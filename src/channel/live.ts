@@ -18,7 +18,7 @@ export class LiveChannel implements Channel {
   private spinner: NodeJS.Timeout | null = null;
   private frame = 0;
   private startedAt = 0;
-  private tokens = { input: 0, output: 0 };
+  private tokens = { input: 0, output: 0, cached: 0 };
   private cost = 0;
 
   constructor(
@@ -41,7 +41,7 @@ export class LiveChannel implements Channel {
 
     if (event.kind === "start") {
       this.startedAt = Date.now();
-      this.tokens = { input: 0, output: 0 };
+      this.tokens = { input: 0, output: 0, cached: 0 };
       this.cost = 0;
       this.line(`${DIM}${run.id}${OFF}  ${event.task.replace(/\s+/g, " ").slice(0, 60)}`);
       this.spin("думає");
@@ -51,10 +51,12 @@ export class LiveChannel implements Channel {
     if (event.kind === "llm") {
       this.tokens.input += event.inputTokens;
       this.tokens.output += event.outputTokens;
+      this.tokens.cached += event.cachedTokens;
       this.cost += event.costUsd;
       this.line(
         `  ${DIM}крок ${event.step}${OFF}  ${event.model}  ` +
-          `${DIM}${event.inputTokens}→${event.outputTokens} · $${event.costUsd.toFixed(4)}${OFF}`,
+          `${DIM}${event.inputTokens}→${event.outputTokens}` +
+          `${event.cachedTokens ? ` · кеш ${event.cachedTokens}` : ""} · $${event.costUsd.toFixed(4)}${OFF}`,
       );
       this.spin(event.stopReason === "tool_use" ? "виконує" : "думає");
       return;

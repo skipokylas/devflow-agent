@@ -4,7 +4,16 @@ export type Question = { question: string; options: string[] };
 
 /** Подія кроку для живого показу. Необовʼязкова: канал може її ігнорувати. */
 export type Progress =
-  | { kind: "llm"; step: number; model: string; stopReason: string | null; inputTokens: number; outputTokens: number; costUsd: number }
+  | {
+      kind: "llm";
+      step: number;
+      model: string;
+      stopReason: string | null;
+      inputTokens: number;
+      outputTokens: number;
+      cachedTokens: number;
+      costUsd: number;
+    }
   | { kind: "tool"; name: string; input: unknown; ok: boolean; ms: number }
   | { kind: "start"; task: string }
   | { kind: "end"; status: string };

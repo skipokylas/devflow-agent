@@ -165,6 +165,27 @@ const draft = (id: string): Run =>
   check("дозвіл записаний у run", approved.approved.includes("create_issue"));
 }
 
+// 7b. кешування: параметр іде в запит, ціна враховує запис і читання
+{
+  const { priceOf } = await import("./trace/types");
+
+  let sent: unknown = null;
+  const spy: Deps["llm"] = async (params) => {
+    sent = params;
+    return fakeText("ок");
+  };
+  await advance(await storage.create(draft("run_cache")), deps(spy));
+  check("cache_control іде в запит", (sent as { cache_control?: unknown }).cache_control !== undefined);
+
+  const base = { model: "claude-haiku-4-5", inputTokens: 1_000_000, outputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0 };
+  const full = priceOf(base);
+  const cached = priceOf({ ...base, inputTokens: 0, cacheReadTokens: 1_000_000 });
+  const written = priceOf({ ...base, inputTokens: 0, cacheWriteTokens: 1_000_000 });
+
+  check("читання з кешу вдесятеро дешевше", Math.abs(cached - full * 0.1) < 1e-9, `${full} → ${cached}`);
+  check("запис у кеш дорожчий на чверть", Math.abs(written - full * 1.25) < 1e-9, `${full} → ${written}`);
+}
+
 // 8. чужий текст загорнутий в untrusted і не може закрити тег
 {
   const { untrusted } = await import("./agent/tools");

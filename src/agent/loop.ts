@@ -73,6 +73,10 @@ async function loop(
     const response = await deps.llm({
       model: deps.model,
       max_tokens: 4096,
+      // Кешується найдовший стабільний префікс: інструменти, системний промпт і
+      // вся історія до цього кроку. Наступний крок читає її вдесятеро дешевше
+      // замість того, щоб платити за неї повну ціну знову.
+      cache_control: { type: "ephemeral" },
       ...(deps.system ? { system: deps.system } : {}),
       tools: deps.tools.definitions(),
       messages: current.messages,
@@ -82,6 +86,8 @@ async function loop(
       model: deps.model,
       inputTokens: response.usage.input_tokens,
       outputTokens: response.usage.output_tokens,
+      cacheWriteTokens: response.usage.cache_creation_input_tokens ?? 0,
+      cacheReadTokens: response.usage.cache_read_input_tokens ?? 0,
     };
 
     await tracer.finish(call, {
@@ -107,6 +113,7 @@ async function loop(
       stopReason: response.stop_reason,
       inputTokens: cost.inputTokens,
       outputTokens: cost.outputTokens,
+      cachedTokens: cost.cacheReadTokens,
       costUsd: priceOf(cost),
     });
 

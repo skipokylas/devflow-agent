@@ -20,6 +20,8 @@ export function toTree(spans: Span[]): Node[] {
 
 export function summary(spans: Span[]) {
   return {
+    cacheRead: spans.reduce((n, s) => n + (s.cost?.cacheReadTokens ?? 0), 0),
+    cacheWrite: spans.reduce((n, s) => n + (s.cost?.cacheWriteTokens ?? 0), 0),
     llmCalls: spans.filter((s) => s.type === "llm_call").length,
     toolCalls: spans.filter((s) => s.type === "tool_call").length,
     errors: spans.filter((s) => s.error).length,

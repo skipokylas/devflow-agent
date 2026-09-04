@@ -127,12 +127,13 @@ export function renderReport(run: Run, spans: Span[]): string {
   if (s) {
     const seconds = (s.durationMs / 1000).toFixed(1);
     const tokens = `${s.inputTokens.toLocaleString("uk")}→${s.outputTokens.toLocaleString("uk")}`;
+    const cached = s.cacheRead > 0 ? ` · з кешу ${s.cacheRead.toLocaleString("uk")}` : "";
     out.push(
       "",
       "---",
       `<sub>${plural(s.llmCalls, "звернення", "звернення", "звернень")} · ` +
         `${plural(s.toolCalls, "виклик", "виклики", "викликів")} інструментів · ${tokens} токенів · ` +
-        `<b>$${s.cost.toFixed(4)}</b> · ${seconds}s` +
+        `<b>$${s.cost.toFixed(4)}</b>${cached} · ${seconds}s` +
         (iteration > 1 ? ` · ${plural(iteration, "ітерація", "ітерації", "ітерацій")}` : "") +
         ` · <code>devflow trace ${run.id}</code></sub>`,
     );
