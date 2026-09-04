@@ -174,6 +174,30 @@ check("у звіті видно текст уточнення", updated.includes
   check("підзадачі не потрапили в чергу", (await planBoard.ready()).length === 0);
 }
 
+// 3f. видалений квиток не блокує чергу
+{
+  const { TicketGone } = await import("./board/board");
+  const storage5 = new FileStorage(`${dir}/runs5`);
+
+  const broken = new InMemoryBoard([ticket("50", "квиток, який зникне"), ticket("51", "живий квиток")]);
+  const original = broken.commentsSince.bind(broken);
+  broken.commentsSince = async (r, since) => {
+    if (r.externalId === "50") throw new TicketGone("50");
+    return original(r, since);
+  };
+
+  const deps5: Deps = { ...deps, storage: storage5 };
+  await tick(deps5, broken, log);                       // взяв обидва, попрацював над першим
+  const gone = (await storage5.list()).find((r) => r.ticket?.externalId === "50");
+  if (gone) await storage5.save({ ...gone, status: "waiting_human", lastCommentAt: new Date(0).toISOString() });
+
+  await tick(deps5, broken, log);
+  const after = await storage5.load(gone?.id ?? "");
+  check("зниклий квиток → run позначено failed", after.status === "failed", after.status);
+  check("причина записана", after.error?.includes("недоступний") === true, after.error ?? "");
+  check("другий квиток усе одно опрацьовано", (await storage5.list()).some((r) => r.ticket?.externalId === "51" && r.status !== "queued"));
+}
+
 // 4. відновлення після простою
 const second = (await storage.list()).find((r) => r.status === "waiting_human");
 await storage.save({ ...(second as NonNullable<typeof second>), status: "running" });

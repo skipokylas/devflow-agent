@@ -7,6 +7,7 @@ import type { Board } from "./board/board";
 import type { Ticket, TicketRef, TicketStatus } from "./board/types";
 import { BoardChannel } from "./channel/board";
 import { renderReport } from "./report";
+import { TicketGone } from "./board/board";
 import { LiveChannel } from "./channel/live";
 import type { RepoRef } from "./repo";
 import { bindingOf } from "./guard";
@@ -96,29 +97,57 @@ async function collectAnswers(
     if (!run.ticket) continue;
     if (run.status !== "waiting_human" && run.status !== "done") continue;
 
-    // Порожній since взагалі неприпустимий: він означає «уся історія».
-    const since = run.lastCommentAt ?? run.pending?.askedAt ?? null;
-    if (!since) continue;
-    const answer = (await board.commentsSince(run.ticket, since)).find((c) => !c.mine);
-    if (!answer) continue;
+    const ticket = run.ticket;
 
-    const seen = await deps.storage.save({ ...run, lastCommentAt: answer.createdAt });
-    await board.setStatus(run.ticket, "in_progress");
+    await isolate(deps, run, log, async () => {
+      // Порожній since взагалі неприпустимий: він означає «уся історія».
+      const since = run.lastCommentAt ?? run.pending?.askedAt ?? null;
+      if (!since) return;
 
-    if (seen.status === "waiting_human") {
-      log(`відповідь на ${seen.id}: ${answer.body.slice(0, 60)}`);
-      await finish(deps, board, await resume(seen.id, answer.body, withChannel(deps, board, seen)), log, finishStatus);
-      continue;
-    }
+      const answer = (await board.commentsSince(ticket, since)).find((c) => !c.mine);
+      if (!answer) return;
 
-    // Доопрацювання: та сама історія плюс нове прохання — модель памʼятає, що вже зробила.
-    log(`доопрацювання ${seen.id}: ${answer.body.slice(0, 60)}`);
-    const reopened = await deps.storage.save({
-      ...seen,
-      status: "queued",
-      messages: [...seen.messages, { role: "user", content: answer.body }],
+      const seen = await deps.storage.save({ ...run, lastCommentAt: answer.createdAt });
+      await board.setStatus(ticket, "in_progress");
+
+      if (seen.status === "waiting_human") {
+        log(`відповідь на ${seen.id}: ${answer.body.slice(0, 60)}`);
+        await finish(deps, board, await resume(seen.id, answer.body, withChannel(deps, board, seen)), log, finishStatus);
+        return;
+      }
+
+      // Доопрацювання: та сама історія плюс нове прохання — модель памʼятає, що вже зробила.
+      log(`доопрацювання ${seen.id}: ${answer.body.slice(0, 60)}`);
+      const reopened = await deps.storage.save({
+        ...seen,
+        status: "queued",
+        messages: [...seen.messages, { role: "user", content: answer.body }],
+      });
+      await finish(deps, board, await advance(reopened, withChannel(deps, board, reopened)), log, finishStatus);
     });
-    await finish(deps, board, await advance(reopened, withChannel(deps, board, reopened)), log, finishStatus);
+  }
+}
+
+/**
+ * Один зіпсований прогін не має зупиняти чергу. Видалений квиток — остаточно:
+ * позначаємо failed. Решта помилок вважаються тимчасовими: наступний оберт
+ * спробує знову.
+ */
+async function isolate(
+  deps: Deps,
+  run: Run,
+  log: (l: string) => void,
+  work: () => Promise<void>,
+): Promise<void> {
+  try {
+    await work();
+  } catch (err) {
+    if (err instanceof TicketGone) {
+      await deps.storage.save({ ...(await deps.storage.load(run.id)), status: "failed", error: err.message });
+      log(`${run.id}: ${err.message}`);
+      return;
+    }
+    log(`${run.id}: ${err instanceof Error ? err.message : String(err)} — спробую наступного оберту`);
   }
 }
 
@@ -139,9 +168,11 @@ async function advanceNext(
   if (!next) return;
 
   log(`працюю над ${next.id}`);
-  if (next.ticket) await board.setStatus(next.ticket, "in_progress");
-  const started = await deps.storage.save({ ...next, status: "running" });
-  await finish(deps, board, await advance(started, withChannel(deps, board, next)), log, finishStatus);
+  await isolate(deps, next, log, async () => {
+    if (next.ticket) await board.setStatus(next.ticket, "in_progress");
+    const started = await deps.storage.save({ ...next, status: "running" });
+    await finish(deps, board, await advance(started, withChannel(deps, board, next)), log, finishStatus);
+  });
 }
 
 async function finish(

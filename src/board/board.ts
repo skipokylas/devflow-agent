@@ -35,6 +35,13 @@ export interface Board {
  * під особистим токеном, його логін збігається з логіном людини, і відповіді
  * людини вважалися б своїми.
  */
+/** Квиток видалено або доступ втрачено: це остаточно, повторювати нема сенсу. */
+export class TicketGone extends Error {
+  constructor(id: string) {
+    super(`квиток ${id} недоступний: видалений або немає прав`);
+  }
+}
+
 export const SELF_MARK = "<!-- devflow";
 
 export const isMine = (body: string): boolean => body.includes(SELF_MARK);

@@ -1,6 +1,6 @@
-import { isMine, type Board } from "../board";
+import { isMine, TicketGone, type Board } from "../board";
 import type { BoardComment, Ticket, TicketRef, TicketStatus } from "../types";
-import { GitHub, type Api } from "./http";
+import { GitHub, GitHubError, type Api } from "./http";
 import { Projects } from "./projects";
 
 type Issue = {
@@ -55,12 +55,26 @@ export class GitHubBoard implements Board {
     return Promise.all(items.map((i) => this.ticket(i.issueNumber, "todo")));
   }
 
+  /** 404 на квитку — остаточна відмова, а не привід повторювати щооберту. */
+  private async onTicket<T>(ref: TicketRef, fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (err) {
+      if (err instanceof GitHubError && err.status === 404) throw new TicketGone(ref.externalId);
+      throw err;
+    }
+  }
+
   async get(ref: TicketRef): Promise<Ticket> {
     const status = await this.statusOf(Number(ref.externalId));
     return this.ticket(Number(ref.externalId), status);
   }
 
   async setStatus(ref: TicketRef, status: TicketStatus): Promise<void> {
+    return this.onTicket(ref, () => this.setStatusUnguarded(ref, status));
+  }
+
+  private async setStatusUnguarded(ref: TicketRef, status: TicketStatus): Promise<void> {
     const number = Number(ref.externalId);
     const items = await this.projects.items();
     const item = items.find((i) => i.issueNumber === number);
@@ -114,9 +128,11 @@ export class GitHubBoard implements Board {
   }
 
   async comment(ref: TicketRef, body: string): Promise<string> {
-    const created = await this.api.post<{ id: number }>(
+    const created = await this.onTicket(ref, () =>
+      this.api.post<{ id: number }>(
       `/repos/${this.cfg.scope}/issues/${ref.externalId}/comments`,
-      { body },
+        { body },
+      ),
     );
     return String(created.id);
   }
@@ -127,8 +143,8 @@ export class GitHubBoard implements Board {
 
   async commentsSince(ref: TicketRef, since: string): Promise<BoardComment[]> {
     const query = since ? `?since=${encodeURIComponent(since)}` : "";
-    const raw = await this.api.get<Comment[]>(
-      `/repos/${this.cfg.scope}/issues/${ref.externalId}/comments${query}`,
+    const raw = await this.onTicket(ref, () =>
+      this.api.get<Comment[]>(`/repos/${this.cfg.scope}/issues/${ref.externalId}/comments${query}`),
     );
 
     return raw
