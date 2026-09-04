@@ -25,6 +25,7 @@ export function newRun(input: {
     repo: input.repo ?? null,
     report: null,
     lastCommentAt: null,
+    approved: [],
     version: 0,
   };
 }

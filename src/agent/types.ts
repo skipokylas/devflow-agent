@@ -18,6 +18,14 @@ export const pendingSchema = z.object({
   options: z.array(z.string()),
   /** Мітка часу питання: коментарі після неї вважаються відповіддю. */
   askedAt: z.string().default(""),
+  /**
+   * Якщо пауза виникла через ворота дозволу — намір, який виконається після
+   * згоди. Порожньо, коли це звичайне питання від моделі.
+   */
+  approval: z
+    .object({ tool: z.string(), input: z.unknown() })
+    .nullable()
+    .default(null),
   partialResults: z.array(toolResultParam),
 });
 
@@ -40,6 +48,8 @@ export const runSchema = z.object({
   report: z.object({ commentId: z.string() }).nullable().default(null),
   /** Момент останнього врахованого коментаря — щоб не обробити той самий двічі. */
   lastCommentAt: z.string().nullable().default(null),
+  /** Інструменти, на які людина дала дозвіл у межах цього run. */
+  approved: z.array(z.string()).default([]),
   version: z.number().int().nonnegative(),
 });
 

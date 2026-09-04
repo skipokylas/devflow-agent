@@ -69,6 +69,11 @@ export class ToolRegistry {
     }));
   }
 
+  /** Ворота питають реєстр, а не самі парсять назви. */
+  needsApproval(name: string): boolean {
+    return this.byName.get(name)?.access === "write";
+  }
+
   async execute(name: string, input: unknown, ctx: ToolContext): Promise<string> {
     const tool = this.byName.get(name);
     if (!tool) throw new UnknownTool(name);

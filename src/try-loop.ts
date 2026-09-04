@@ -119,6 +119,50 @@ const draft = (id: string): Run =>
   check("resume не на паузі → NotWaiting", caught);
 }
 
+// 7a. ворота дозволу: write-дія зупиняє цикл, згода її виконує
+{
+  const { defineTool, ToolRegistry } = await import("./agent/tools");
+  const { z } = await import("zod");
+
+  let created = 0;
+  const registry = new ToolRegistry([
+    (await import("./agent/tools")).askHuman,
+    defineTool({
+      name: "create_issue",
+      description: "Створити issue",
+      access: "write",
+      input: z.object({ title: z.string() }),
+      execute: async ({ title }) => {
+        created++;
+        return `створено «${title}» (#${created})`;
+      },
+    }),
+  ]);
+
+  const write = fakeToolUse("create_issue", { title: "додати таблицю" }, "t_write");
+  const channel = new SilentChannel();
+  const withTool = (llm: Deps["llm"]): Deps => ({ ...deps(llm, channel), tools: registry });
+
+  const paused = await advance(await storage.create(draft("run_gate")), withTool(scriptedLlm([write])));
+  check("write-дія зупиняє цикл", paused.status === "waiting_human");
+  check("інструмент не виконався", created === 0);
+  check("намір збережений у pending", paused.pending?.approval?.tool === "create_issue");
+  check("питання називає дію", channel.asked[0]?.question.includes("create_issue") === true,
+    channel.asked[0]?.question ?? "");
+
+  // відмова: дія не виконується, модель дізнається причину
+  const refused = await resume("run_gate", "ні, не треба", withTool(scriptedLlm([fakeText("зрозумів")])));
+  check("відмова не виконує дію", created === 0);
+  check("run завершився після відмови", refused.status === "done");
+
+  // згода: дія виконується, дозвіл діє далі в межах run
+  const again = await storage.create({ ...draft("run_gate2") });
+  const paused2 = await advance(again, withTool(scriptedLlm([write])));
+  const approved = await resume(paused2.id, "так", withTool(scriptedLlm([fakeText("готово")])));
+  check("згода виконує відкладену дію", created === 1, `створено ${created}`);
+  check("дозвіл записаний у run", approved.approved.includes("create_issue"));
+}
+
 // 8. чужий текст загорнутий в untrusted і не може закрити тег
 {
   const { untrusted } = await import("./agent/tools");

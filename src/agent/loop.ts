@@ -130,6 +130,18 @@ async function loop(
       approvedActions: new Set(),
     };
 
+    // Ворота дозволу: write-дія без згоди людини зупиняє цикл. Перевірка стоїть
+    // у коді, а не в промпті — інакше вона трималася б на слухняності моделі.
+    const gated = toolUses.find(
+      (use) => deps.tools.needsApproval(use.name) && !current.approved.includes(use.name),
+    );
+    if (gated) {
+      return await pause(current, gated, results, deps, tracer, call.id, {
+        tool: gated.name,
+        input: gated.input,
+      });
+    }
+
     // Спершу виконуємо всі звичайні інструменти: кожен tool_use мусить отримати результат.
     for (const use of toolUses) {
       if (use.name === ASK_HUMAN) continue;
@@ -195,15 +207,35 @@ export async function resume(runId: string, answer: string, deps: Deps): Promise
   const tracer = new Tracer(deps.trace, run.id);
   const root = tracer.start();
 
-  const { toolUseId, partialResults } = run.pending;
-  const resumed = await push(
-    { ...run, status: "running", pending: null, error: null },
-    {
-      role: "user",
-      content: [...partialResults, { type: "tool_result", tool_use_id: toolUseId, content: answer }],
-    },
-    deps,
-  );
+  const { toolUseId, partialResults, approval } = run.pending;
+  const agreed = approval !== null && isYes(answer);
+
+  const base: Run = {
+    ...run,
+    status: "running",
+    pending: null,
+    error: null,
+    approved: agreed ? [...run.approved, approval.tool] : run.approved,
+  };
+
+  // Пауза через ворота — це не питання моделі, а відкладена дія: після згоди
+  // виконуємо саме її, і модель отримує справжній результат, а не слово «так».
+  const result: Anthropic.ToolResultBlockParam = agreed
+    ? await runTool(
+        { ...deps, tools: deps.tools },
+        { type: "tool_use", id: toolUseId, name: approval.tool, input: approval.input, caller: { type: "direct" } },
+        { runId: run.id, root: deps.root, approvedActions: new Set(base.approved) },
+        new Tracer(deps.trace, run.id),
+        toolUseId,
+      )
+    : {
+        type: "tool_result",
+        tool_use_id: toolUseId,
+        content: approval ? `людина не дала дозволу: ${answer}` : answer,
+        ...(approval ? { is_error: true } : {}),
+      };
+
+  const resumed = await push(base, { role: "user", content: [...partialResults, result] }, deps);
 
   const answerSpan = tracer.start();
   await tracer.finish(answerSpan, { parentId: root.id, type: "answer", name: "людина", output: answer });
@@ -232,15 +264,25 @@ async function pause(
   deps: Deps,
   tracer: Tracer,
   parentId: string,
+  approval: { tool: string; input: unknown } | null = null,
 ): Promise<Run> {
   const input = ask.input as { question?: string; options?: string[] };
-  const question = input.question ?? "(питання без тексту)";
-  const options = input.options ?? [];
+  const question = approval
+    ? `Дозволити дію ${approval.tool}? ${describe(approval.input)}`
+    : (input.question ?? "(питання без тексту)");
+  const options = approval ? ["так", "ні"] : (input.options ?? []);
 
   const paused = await deps.storage.save({
     ...run,
     status: "waiting_human",
-    pending: { toolUseId: ask.id, question, options, partialResults, askedAt: new Date().toISOString() },
+    pending: {
+      toolUseId: ask.id,
+      question,
+      options,
+      partialResults,
+      askedAt: new Date().toISOString(),
+      approval,
+    },
   });
 
   const span = tracer.start();
@@ -284,6 +326,22 @@ async function runTool(
 
 function errorResult(id: string, message: string): Anthropic.ToolResultBlockParam {
   return { type: "tool_result", tool_use_id: id, content: message, is_error: true };
+}
+
+/** Аргументи наміру людською мовою: рішення приймається за ними, а не за назвою. */
+function describe(input: unknown): string {
+  if (!input || typeof input !== "object") return "";
+  return Object.entries(input as Record<string, unknown>)
+    .map(([k, v]) => `${k}: ${String(v).replace(/\s+/g, " ").slice(0, 120)}`)
+    .join("; ");
+}
+
+/**
+ * Згода людини. Свідомо вузький перелік: усе інше — відмова.
+ * Без \b: у JS він працює за ASCII, тому після «так» межі слова не бачить.
+ */
+function isYes(answer: string): boolean {
+  return /^(так|ок|okay|ok|yes|y|погоджуюсь|давай|підтверджую|\+)(\s|[.,!)]|$)/i.test(answer.trim());
 }
 
 /** Початкова задача — те, з чого почався run. Показується в шапці трейсу. */
