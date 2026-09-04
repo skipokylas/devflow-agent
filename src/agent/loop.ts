@@ -4,7 +4,7 @@ import { Tracer, type OpenSpan, type TraceSink } from "../trace/sink";
 import type { Channel } from "./channel";
 import { priceOf } from "../trace/types";
 import type { Llm } from "./llm";
-import { ASK_HUMAN, type ToolContext, type ToolRegistry } from "./tools";
+import { ASK_HUMAN, WRITE_ACCESS, type ToolContext, type ToolRegistry } from "./tools";
 import type { Run } from "./types";
 
 export type Deps = {
@@ -143,7 +143,7 @@ async function loop(
     // Ворота дозволу: write-дія без згоди людини зупиняє цикл. Перевірка стоїть
     // у коді, а не в промпті — інакше вона трималася б на слухняності моделі.
     const gated = toolUses.find(
-      (use) => deps.tools.needsApproval(use.name) && !current.approved.includes(use.name),
+      (use) => deps.tools.needsApproval(use.name) && !current.approved.includes(WRITE_ACCESS),
     );
     if (gated) {
       return await pause(current, gated, results, deps, tracer, call.id, {
@@ -225,7 +225,7 @@ export async function resume(runId: string, answer: string, deps: Deps): Promise
     status: "running",
     pending: null,
     error: null,
-    approved: agreed ? [...run.approved, approval.tool] : run.approved,
+    approved: agreed ? [...run.approved, WRITE_ACCESS] : run.approved,
   };
 
   // Пауза через ворота — це не питання моделі, а відкладена дія: після згоди
@@ -278,7 +278,8 @@ async function pause(
 ): Promise<Run> {
   const input = ask.input as { question?: string; options?: string[] };
   const question = approval
-    ? `Дозволити дію ${approval.tool}?\n\n${describe(approval.input)}`
+    ? `Дозволити правки в цьому прогоні? Дозвіл діє на всі зміни файлів і ` +
+      `перевірки до кінця задачі.\n\nПерша дія — ${approval.tool}:\n${describe(approval.input)}`
     : (input.question ?? "(питання без тексту)");
   const options = approval ? ["так", "ні"] : (input.options ?? []);
 

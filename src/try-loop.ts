@@ -162,7 +162,7 @@ const draft = (id: string): Run =>
   const paused2 = await advance(again, withTool(scriptedLlm([write])));
   const approved = await resume(paused2.id, "так", withTool(scriptedLlm([fakeText("готово")])));
   check("згода виконує відкладену дію", created === 1, `створено ${created}`);
-  check("дозвіл записаний у run", approved.approved.includes("create_issue"));
+  check("дозвіл записаний як клас, не як назва", approved.approved.includes("write"));
 
   // Наступний виклик того самого інструмента має пройти без нової паузи:
   // ворота дивляться в run.approved, реєстр — у ctx.approvedActions, і вони
@@ -177,6 +177,33 @@ const draft = (id: string): Run =>
   );
   check("повторний виклик після дозволу не питає знову", after.status === "done", after.status);
   check("і справді виконується", created === 2, `створено ${created}`);
+
+  // Дозвіл на клас: інший write-інструмент теж проходить без нової паузи.
+  let other = 0;
+  const registry2 = new ToolRegistry([
+    ...registry.all(),
+    defineTool({
+      name: "delete_issue",
+      description: "d",
+      access: "write",
+      input: z.object({ id: z.string() }),
+      execute: async () => {
+        other++;
+        return "видалено";
+      },
+    }),
+  ]);
+  const withBoth = (llm: Deps["llm"]): Deps => ({ ...deps(llm, channel), tools: registry2 });
+  const second = await advance(
+    await storage.save({
+      ...after,
+      status: "running",
+      messages: [...after.messages, { role: "user", content: "прибери" }],
+    }),
+    withBoth(scriptedLlm([fakeToolUse("delete_issue", { id: "1" }, "t_del"), fakeText("готово")])),
+  );
+  check("інший write-інструмент не питає окремо", second.status === "done", second.status);
+  check("і теж виконується", other === 1, `${other}`);
 }
 
 // 7b. кешування: параметр іде в запит, ціна враховує запис і читання

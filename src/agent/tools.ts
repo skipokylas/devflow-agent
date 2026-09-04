@@ -8,6 +8,15 @@ export const ASK_HUMAN = "ask_human";
 
 export type ToolAccess = "read" | "write";
 
+/**
+ * Дозвіл видається на клас дій, а не на окремий інструмент. Осмислена межа —
+ * «чи можна агенту щось міняти в цій робочій копії», а не «чи саме edit_file»:
+ * копія одноразова, шляхи обмежені коренем, команди з переліку, а справжня
+ * перевірка — рев'ю PR. Три окремі підтвердження за одну задачу лише привчають
+ * тиснути «так» не читаючи.
+ */
+export const WRITE_ACCESS = "write";
+
 export type ToolContext = {
   runId: string;
   /** Корінь, за межі якого файлові інструменти не виходять. */
@@ -96,7 +105,8 @@ export class ToolRegistry {
     const tool = this.byName.get(name);
     if (!tool) throw new UnknownTool(name);
     if (name === ASK_HUMAN) throw new Error(`${ASK_HUMAN} обробляє цикл, не реєстр`);
-    if (tool.access === "write" && !ctx.approvedActions.has(name)) throw new NotApproved(name);
+    const allowed = ctx.approvedActions.has(WRITE_ACCESS) || ctx.approvedActions.has(name);
+    if (tool.access === "write" && !allowed) throw new NotApproved(name);
     return tool.execute(input, ctx);
   }
 }
