@@ -15,6 +15,7 @@ import { loadConfig } from "./config";
 import { GitHubForge } from "./forge/github";
 import { init } from "./init";
 import { recover, tick, watch, type Ctx } from "./scheduler";
+import { serve, DEFAULT_PORT } from "./serve";
 import { RunNotFound } from "./db/storage";
 import { summary, toHtml, toText } from "./trace/render";
 import { newRun } from "./agent/run";
@@ -35,6 +36,8 @@ const KNOWN_VARS = [
   "AGENT_BOARD",
   "AGENT_STATE_DIR",
   "WATCH_INTERVAL",
+  "DEVFLOW_PORT",
+  "DEVFLOW_SERVE_URL",
   "GITHUB_TOKEN",
   "ANTHROPIC_API_KEY",
 ];
@@ -78,6 +81,7 @@ function usage(): void {
   devflow watch                       планувальник у циклі: бере задачі й веде їх
   devflow list                        усі runs цього репозиторію
   devflow trace <runId>               дерево кроків: що робив і скільки коштувало
+  devflow serve                       трейси по HTTP: / і /trace/<runId>
   devflow show <runId>                показати стан run
 
 Змінні — префіксом або після команди: devflow tick MODEL=claude-haiku-4-5
@@ -87,7 +91,9 @@ function usage(): void {
   AGENT_BOARD=memory  дошка в памʼяті замість GitHub (для перевірок)
   GITHUB_TOKEN     токен зі scope repo і project
   MODEL=...        модель (типово claude-opus-5)
-  MAX_STEPS=...    ліміт кроків циклу (типово 8)`);
+  MAX_STEPS=...    ліміт кроків циклу (типово 8)
+  DEVFLOW_PORT=... порт для devflow serve (типово ${DEFAULT_PORT})
+  DEVFLOW_SERVE_URL=...  зовнішня адреса serve; тоді у звіті буде посилання на трейс`);
 }
 
 async function cmdRun(args: string[]): Promise<void> {
@@ -256,6 +262,13 @@ async function cmdTrace(args: string[]): Promise<void> {
   console.log(`\nводоспад: open ${file}`);
 }
 
+/** Ті самі трейси, що й `devflow trace`, тільки за посиланням: з телефона й з квитка. */
+async function cmdServe(): Promise<void> {
+  const port = Number(process.env["DEVFLOW_PORT"] ?? DEFAULT_PORT);
+  console.log(`${repo.id}  трейси з ${traceDir}\n`);
+  await serve({ storage, trace, port, log: (line: string) => console.log(line) });
+}
+
 async function cmdShow(args: string[]): Promise<void> {
   const id = args[0];
   if (!id) throw new Error("потрібен id: agent show <runId>");
@@ -308,6 +321,9 @@ try {
       break;
     case "trace":
       await cmdTrace(rest);
+      break;
+    case "serve":
+      await cmdServe();
       break;
     case "show":
       await cmdShow(rest);

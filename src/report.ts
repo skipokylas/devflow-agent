@@ -55,6 +55,16 @@ function plural(n: number, one: string, few: string, many: string): string {
   return `${n} ${many}`;
 }
 
+/**
+ * Трейс у підвалі звіту. Посилання — лише коли задано DEVFLOW_SERVE_URL: адреса
+ * на localhost у публічному коментарі гірша за її відсутність, бо в того, хто
+ * читає квиток, вона не відкриється. Без змінної лишається підказка командою.
+ */
+function traceRef(runId: string): string {
+  const base = process.env["DEVFLOW_SERVE_URL"]?.replace(/\/+$/, "");
+  return base ? `<a href="${base}/trace/${runId}">трейс</a>` : `<code>devflow trace ${runId}</code>`;
+}
+
 /** Заголовки моделі опускаємо на рівень нижче, щоб вони не перебивали наш. */
 const demote = (text: string): string => text.replace(/^(#{1,4}) /gm, "#$1 ");
 
@@ -135,7 +145,7 @@ export function renderReport(run: Run, spans: Span[]): string {
         `${plural(s.toolCalls, "виклик", "виклики", "викликів")} інструментів · ${tokens} токенів · ` +
         `<b>$${s.cost.toFixed(4)}</b>${cached} · ${seconds}s` +
         (iteration > 1 ? ` · ${plural(iteration, "ітерація", "ітерації", "ітерацій")}` : "") +
-        ` · <code>devflow trace ${run.id}</code></sub>`,
+        ` · ${traceRef(run.id)}</sub>`,
     );
   }
 
