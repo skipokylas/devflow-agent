@@ -112,7 +112,7 @@ export function toText(spans: Span[]): string {
 
 // ─────────────────────────── переглядач ───────────────────────────
 
-const esc = (t: string): string => t.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c);
+export const esc = (t: string): string => t.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c);
 const json = (v: unknown): string => esc(JSON.stringify(v, null, 2) ?? "");
 
 function block(b: Block): string {
