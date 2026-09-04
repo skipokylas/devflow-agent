@@ -268,7 +268,7 @@ async function pause(
 ): Promise<Run> {
   const input = ask.input as { question?: string; options?: string[] };
   const question = approval
-    ? `Дозволити дію ${approval.tool}? ${describe(approval.input)}`
+    ? `Дозволити дію ${approval.tool}?\n\n${describe(approval.input)}`
     : (input.question ?? "(питання без тексту)");
   const options = approval ? ["так", "ні"] : (input.options ?? []);
 
@@ -328,13 +328,43 @@ function errorResult(id: string, message: string): Anthropic.ToolResultBlockPara
   return { type: "tool_result", tool_use_id: id, content: message, is_error: true };
 }
 
-/** Аргументи наміру людською мовою: рішення приймається за ними, а не за назвою. */
+/**
+ * Аргументи наміру людською мовою: рішення приймається за ними, а не за назвою
+ * дії. String() на масиві обʼєктів давав «[object Object]» — тобто рівно там,
+ * де треба було побачити план, людина бачила нічого.
+ */
 function describe(input: unknown): string {
   if (!input || typeof input !== "object") return "";
+
   return Object.entries(input as Record<string, unknown>)
-    .map(([k, v]) => `${k}: ${String(v).replace(/\s+/g, " ").slice(0, 120)}`)
-    .join("; ");
+    .map(([key, value]) => {
+      if (Array.isArray(value)) {
+        const items = value.map((item, i) => `  ${i + 1}. ${itemLine(item)}`).join("\n");
+        return `${key} (${value.length}):\n${items}`;
+      }
+      return `${key}: ${one(String(value), 160)}`;
+    })
+    .join("\n");
 }
+
+/** Обʼєкт у списку показуємо за назвою, а не серіалізацією. */
+function itemLine(item: unknown): string {
+  if (item && typeof item === "object") {
+    const record = item as Record<string, unknown>;
+    const title = record["title"] ?? record["name"] ?? record["path"];
+    if (typeof title === "string") {
+      const detail = typeof record["body"] === "string" ? ` — ${one(record["body"], 90)}` : "";
+      return `${title}${detail}`;
+    }
+    return one(JSON.stringify(item), 140);
+  }
+  return one(String(item), 140);
+}
+
+const one = (text: string, limit: number): string => {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > limit ? `${flat.slice(0, limit)}…` : flat;
+};
 
 /**
  * Згода людини. Свідомо вузький перелік: усе інше — відмова.

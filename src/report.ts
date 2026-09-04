@@ -69,7 +69,7 @@ function call(block: Block): string {
       return `\`${block.name} ${path}${typeof depth === "number" ? ` -d${depth}` : ""}\``;
     }
     const pairs = Object.entries(record)
-      .map(([k, v]) => `${k}=${String(v).slice(0, 24)}`)
+      .map(([k, v]) => `${k}=${Array.isArray(v) ? `${v.length} шт.` : String(v).slice(0, 24)}`)
       .join(" ");
     return `\`${block.name}${pairs ? ` ${pairs}` : ""}\``;
   }

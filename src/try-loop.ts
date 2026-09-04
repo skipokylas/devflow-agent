@@ -149,6 +149,8 @@ const draft = (id: string): Run =>
   check("намір збережений у pending", paused.pending?.approval?.tool === "create_issue");
   check("питання називає дію", channel.asked[0]?.question.includes("create_issue") === true,
     channel.asked[0]?.question ?? "");
+  check("аргументи читабельні, без [object Object]",
+    channel.asked[0]?.question.includes("[object") !== true);
 
   // відмова: дія не виконується, модель дізнається причину
   const refused = await resume("run_gate", "ні, не треба", withTool(scriptedLlm([fakeText("зрозумів")])));
