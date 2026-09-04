@@ -58,7 +58,8 @@ const log = (): void => {};
 await tick(deps, board, log);
 let runs = await storage.list();
 check("створено run на кожен квиток", runs.length === 2, `${runs.length}`);
-check("квитки переведені з todo", (await board.ready()).length === 0);
+check("перший квиток узятий у роботу", (await board.get(ref("1"))).status !== "todo");
+check("другий лишився в Ready, поки не дійшла черга", (await board.get(ref("2"))).status === "todo");
 check("один дійшов до паузи", runs.filter((r) => r.status === "waiting_human").length === 1);
 check("другий чекає в черзі", runs.filter((r) => r.status === "queued").length === 1);
 

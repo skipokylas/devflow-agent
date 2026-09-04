@@ -74,9 +74,10 @@ async function intake(deps: Deps, board: Board, log: (l: string) => void, repo?:
     const known = runs.some((r) => r.ticket && same(r.ticket, ticket.ref) && active(r));
     if (known) continue;
 
+    // Колонку не чіпаємо: картка лишається в Ready, поки робота справді не почалась.
+    // Інакше квиток у черзі виглядає так, ніби над ним працюють.
     await deps.storage.create(runFor(ticket, repo));
-    await board.setStatus(ticket.ref, "in_progress");
-    log(`взято ${ticket.ref.externalId}: ${ticket.title}`);
+    log(`у черзі ${ticket.ref.externalId}: ${ticket.title}`);
   }
 }
 
@@ -131,10 +132,14 @@ async function advanceNext(
   const runs = await deps.storage.list();
   if (runs.some((r) => r.status === "running")) return;
 
-  const next = runs.filter((r) => r.status === "queued").sort((a, b) => a.id.localeCompare(b.id))[0];
+  // FIFO за часом створення: id випадковий, сортування за ним давало довільний порядок.
+  const next = runs
+    .filter((r) => r.status === "queued")
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))[0];
   if (!next) return;
 
   log(`працюю над ${next.id}`);
+  if (next.ticket) await board.setStatus(next.ticket, "in_progress");
   const started = await deps.storage.save({ ...next, status: "running" });
   await finish(deps, board, await advance(started, withChannel(deps, board, next)), log, finishStatus);
 }

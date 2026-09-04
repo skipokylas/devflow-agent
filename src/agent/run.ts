@@ -26,6 +26,7 @@ export function newRun(input: {
     report: null,
     lastCommentAt: null,
     approved: [],
+    createdAt: new Date().toISOString(),
     version: 0,
   };
 }

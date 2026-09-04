@@ -50,6 +50,8 @@ export const runSchema = z.object({
   lastCommentAt: z.string().nullable().default(null),
   /** Інструменти, на які людина дала дозвіл у межах цього run. */
   approved: z.array(z.string()).default([]),
+  /** Момент створення: черга має бути FIFO, а id випадковий і для сортування не годиться. */
+  createdAt: z.string().default(""),
   version: z.number().int().nonnegative(),
 });
 
