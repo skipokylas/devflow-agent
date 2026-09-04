@@ -111,6 +111,13 @@ export class GitHubBoard implements Board {
     return ref;
   }
 
+  async statuses(): Promise<Map<string, TicketStatus>> {
+    const items = await this.projects.items();
+    return new Map(
+      items.map((i) => [String(i.issueNumber), this.toStatus(i.status)] as const),
+    );
+  }
+
   /** Обмеження: дивимось сотню найсвіжіших issues. Для повторного прогону цього досить. */
   async findByMarker(marker: string): Promise<TicketRef | null> {
     const issues = await this.api.get<Issue[]>(
@@ -160,10 +167,12 @@ export class GitHubBoard implements Board {
 
   private async statusOf(number: number): Promise<TicketStatus> {
     const item = (await this.projects.items()).find((i) => i.issueNumber === number);
-    if (!item?.status) return "todo";
+    return this.toStatus(item?.status ?? null);
+  }
 
+  private toStatus(column: string | null): TicketStatus {
     const found = (Object.entries(this.cfg.statuses) as [TicketStatus, string][]).find(
-      ([, column]) => column === item.status,
+      ([, name]) => name === column,
     );
     return found?.[0] ?? "todo";
   }

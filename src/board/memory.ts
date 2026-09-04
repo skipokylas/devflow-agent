@@ -64,6 +64,10 @@ export class InMemoryBoard implements Board {
     return ref;
   }
 
+  async statuses(): Promise<Map<string, TicketStatus>> {
+    return new Map([...this.tickets.values()].map((t) => [t.ref.externalId, t.status]));
+  }
+
   async findByMarker(marker: string): Promise<TicketRef | null> {
     return [...this.tickets.values()].find((t) => t.body.includes(marker))?.ref ?? null;
   }

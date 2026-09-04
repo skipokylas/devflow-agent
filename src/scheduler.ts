@@ -39,7 +39,7 @@ const same = (a: TicketRef, b: TicketRef): boolean =>
 
 const active = (run: Run): boolean => run.status !== "done" && run.status !== "failed";
 
-/** Скільки днів завершену задачу ще можна продовжити коментарем. */
+/** Скільки днів обірвану задачу ще можна продовжити коментарем. */
 const REOPEN_DAYS = Number(process.env["DEVFLOW_REOPEN_DAYS"] ?? 7);
 
 function recentlyActive(run: Run): boolean {
@@ -140,17 +140,29 @@ async function intake({ deps, board, log, repo }: Ctx): Promise<void> {
  */
 async function collectAnswers(ctx: Ctx): Promise<void> {
   const { deps, board, log } = ctx;
+
+  // Один запит на всі статуси замість опитування кожного квитка окремо.
+  const columns = await board.statuses();
   for (const run of await deps.storage.list()) {
     if (!run.ticket) continue;
-    // failed теж продовжується коментарем: найчастіша його причина — вичерпаний
-    // ліміт кроків, і тоді робота зроблена, а не втрачена. Інакше єдиним виходом
-    // був би новий квиток і читання того самого коду заново.
-    if (!["waiting_human", "done", "failed"].includes(run.status)) continue;
-
-    // Завершені прогони опитуються лише певний час. Інакше кожна колись зроблена
-    // задача перевіряється вічно: шість прогонів при опитуванні раз на 30 секунд
-    // це 17 тисяч запитів на добу, і число росте з кожною закритою задачею.
-    if (run.status !== "waiting_human" && !recentlyActive(run)) continue;
+    // waiting_human — чекає на тебе, опитується завжди.
+    // failed — робота обірвана, найчастіше на ліміті кроків: вона лежить готова,
+    //   і кинути її було б безглуздо, тому опитуємо ще REOPEN_DAYS днів.
+    // done — задача закінчена. Потрібні зміни — новий квиток. Інакше кожна колись
+    //   зроблена задача перевірялася б вічно: шість прогонів при опитуванні раз на
+    //   30 секунд це 17 тисяч запитів на добу, і число росте з кожною закритою.
+    // waiting_human — агент чекає на тебе.
+    // in_review на дошці — ти ще дивишся, отже коментар доречний: саме так
+    //   працює доопрацювання.
+    // failed — робота обірвана, найчастіше на ліміті кроків: вона лежить готова.
+    // Усе інше не опитуємо. Інакше кожна колись зроблена задача перевірялася б
+    //   вічно: шість прогонів раз на 30 секунд це 17 тисяч запитів на добу.
+    const column = columns.get(run.ticket.externalId);
+    const watchable =
+      run.status === "waiting_human" ||
+      column === "in_review" ||
+      (run.status === "failed" && recentlyActive(run));
+    if (!watchable) continue;
 
     const ticket = run.ticket;
 

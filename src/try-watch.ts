@@ -326,13 +326,34 @@ check("у звіті видно текст уточнення", updated.includes
       return original(r, since);
     };
 
+    // Картка прийнята людиною → більше не наша справа.
+    await oldBoard.setStatus(ref("90"), "done");
     await tick(ctx11);
-    check("завершений місяць тому не опитується", asked === 0, `${asked} запитів`);
+    check("прийнята картка не опитується", asked === 0, `${asked} запитів`);
 
-    // Свіжий — опитується.
-    if (old) await storage11.save({ ...(await storage11.load(old.id)), lastCommentAt: new Date().toISOString() });
+    // Картка в In review → людина ще дивиться, коментар доречний.
+    await oldBoard.setStatus(ref("90"), "in_review");
     await tick(ctx11);
-    check("свіжий завершений опитується", asked === 1, `${asked} запитів`);
+    check("картка в In review опитується", asked === 1, `${asked} запитів`);
+
+    // Обірваний прогін опитується, навіть якщо картка вже не в рев'ю.
+    await oldBoard.setStatus(ref("90"), "done");
+    if (old) {
+      await storage11.save({
+        ...(await storage11.load(old.id)),
+        status: "failed",
+        lastCommentAt: new Date().toISOString(),
+      });
+    }
+    await tick(ctx11);
+    check("обірваний опитується попри колонку", asked === 2, `${asked} запитів`);
+
+    // Але не вічно.
+    if (old) {
+      await storage11.save({ ...(await storage11.load(old.id)), status: "failed", lastCommentAt: longAgo });
+    }
+    await tick(ctx11);
+    check("обірваний місяць тому вже ні", asked === 2, `${asked} запитів`);
   }
 
   // 3k. відповідь із термінала йде тим самим шляхом, що й коментар

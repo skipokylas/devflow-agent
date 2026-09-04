@@ -20,6 +20,9 @@ export interface Board {
   /** Створює квиток і одразу кладе його на дошку в колонку todo. */
   createTicket(input: { title: string; body: string; labels?: string[] }): Promise<TicketRef>;
 
+  /** Статуси всіх квитків на дошці одним запитом: щоб не питати про кожен окремо. */
+  statuses(): Promise<Map<string, TicketStatus>>;
+
   /** Пошук за маркером ідемпотентності: чи ми вже створювали це. */
   findByMarker(marker: string): Promise<TicketRef | null>;
 
