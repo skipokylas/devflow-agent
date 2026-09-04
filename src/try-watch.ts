@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import type { Channel } from "./agent/channel";
-import { demoLlm } from "./agent/llm";
+import { demoLlm, fakeText, fakeToolUse, scriptedLlm } from "./agent/llm";
 import type { Deps } from "./agent/loop";
 import { defaultTools } from "./agent/tools";
 import { InMemoryBoard } from "./board/memory";
@@ -141,6 +141,37 @@ check("у звіті видно текст уточнення", updated.includes
   const after = (await storage3.load(parked?.id ?? "")).messages.length;
 
   check("давній коментар не запускає доопрацювання", after === before, `${before} → ${after}`);
+}
+
+// 3e. наскрізний план: ворота зупиняють, згода створює підзадачі
+{
+  const planBoard = new InMemoryBoard([ticket("42", "зробити passwordless-авторизацію")]);
+  const storage4 = new FileStorage(`${dir}/runs4`);
+
+  const plan = {
+    tasks: [
+      { title: "додати таблицю magic_links", body: "зберігає одноразові токени з терміном дії" },
+      { title: "додати POST /auth/request", body: "видає токен і шле лист; перевірка — тест на 202" },
+    ],
+  };
+
+  const llm = scriptedLlm([
+    fakeToolUse("create_issues", plan, "t_plan"),
+    fakeText("Створив дві підзадачі."),
+  ]);
+  const deps4: Deps = { ...deps, storage: storage4, llm };
+
+  await tick(deps4, planBoard, log);
+  const planned = (await storage4.list())[0];
+  check("план зупинився на воротах", planned?.status === "waiting_human");
+  check("підзадач ще немає", (await planBoard.ready()).length === 0, `${(await planBoard.ready()).length}`);
+  check("питання показує дію", planned?.pending?.approval?.tool === "create_issues");
+
+  planBoard.reply(ref("42"), "так");
+  await tick(deps4, planBoard, log);
+  const created = await planBoard.ready();
+  check("після згоди підзадачі створені", created.length === 2, `${created.length}`);
+  check("підзадачі лягли в todo", created.every((t) => t.status === "todo"));
 }
 
 // 4. відновлення після простою

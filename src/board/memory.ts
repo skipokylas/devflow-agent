@@ -45,6 +45,29 @@ export class InMemoryBoard implements Board {
     return (this.threads.get(key(ref)) ?? []).filter((c) => c.createdAt > since);
   }
 
+  async createTicket(input: { title: string; body: string; labels?: string[] }): Promise<TicketRef> {
+    const externalId = String(++this.seq + 1000);
+    const ref: TicketRef = {
+      provider: "github",
+      scope: "org/repo",
+      externalId,
+      url: `https://github.com/org/repo/issues/${externalId}`,
+    };
+    this.tickets.set(key(ref), {
+      ref,
+      title: input.title,
+      body: input.body,
+      status: "todo",
+      labels: input.labels ?? [],
+      updatedAt: new Date().toISOString(),
+    });
+    return ref;
+  }
+
+  async findByMarker(marker: string): Promise<TicketRef | null> {
+    return [...this.tickets.values()].find((t) => t.body.includes(marker))?.ref ?? null;
+  }
+
   private push(ref: TicketRef, c: Omit<BoardComment, "id" | "createdAt">): string {
     const thread = this.threads.get(key(ref)) ?? [];
     const id = `c${++this.seq}`;

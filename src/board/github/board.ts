@@ -76,6 +76,42 @@ export class GitHubBoard implements Board {
     await this.projects.setStatus(itemId, status);
   }
 
+  async createTicket(input: { title: string; body: string; labels?: string[] }): Promise<TicketRef> {
+    const issue = await this.api.post<Issue>(`/repos/${this.cfg.scope}/issues`, {
+      title: input.title,
+      body: input.body,
+      ...(input.labels?.length ? { labels: input.labels } : {}),
+    });
+
+    const ref: TicketRef = {
+      provider: "github",
+      scope: this.cfg.scope,
+      externalId: String(issue.number),
+      url: issue.html_url,
+    };
+
+    // Створений issue сам на дошці не зʼявиться — додаємо і ставимо колонку.
+    const itemId = await this.projects.add(issue.node_id);
+    await this.projects.setStatus(itemId, "todo");
+    return ref;
+  }
+
+  /** Обмеження: дивимось сотню найсвіжіших issues. Для повторного прогону цього досить. */
+  async findByMarker(marker: string): Promise<TicketRef | null> {
+    const issues = await this.api.get<Issue[]>(
+      `/repos/${this.cfg.scope}/issues?state=all&per_page=100`,
+    );
+    const found = issues.find((i) => (i.body ?? "").includes(marker));
+    if (!found) return null;
+
+    return {
+      provider: "github",
+      scope: this.cfg.scope,
+      externalId: String(found.number),
+      url: found.html_url,
+    };
+  }
+
   async comment(ref: TicketRef, body: string): Promise<string> {
     const created = await this.api.post<{ id: number }>(
       `/repos/${this.cfg.scope}/issues/${ref.externalId}/comments`,

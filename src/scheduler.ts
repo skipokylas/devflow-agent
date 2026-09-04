@@ -1,5 +1,6 @@
 import { advance, resume, type Deps } from "./agent/loop";
 import { newRun } from "./agent/run";
+import { toolsWithBoard } from "./agent/tools-board";
 import { untrusted } from "./agent/tools";
 import type { Run } from "./agent/types";
 import type { Board } from "./board/board";
@@ -178,9 +179,14 @@ async function publishReport(deps: Deps, board: Board, run: Run): Promise<Run> {
   return deps.storage.save({ ...run, report: { commentId } });
 }
 
+/** У режимі планувальника агент має дошку: звідси і канал, і вміння створювати підзадачі. */
 function withChannel(deps: Deps, board: Board, run: Run): Deps {
   if (!run.ticket) return deps;
-  return { ...deps, channel: new LiveChannel(new BoardChannel(board, run.ticket)) };
+  return {
+    ...deps,
+    channel: new LiveChannel(new BoardChannel(board, run.ticket)),
+    tools: toolsWithBoard(deps.tools, board, run.id),
+  };
 }
 
 function runFor(ticket: Ticket, repo?: RepoRef): Run {

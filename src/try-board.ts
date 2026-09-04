@@ -55,5 +55,47 @@ check("невідомий провайдер → помилка схеми", !ba
 const noUrl = ticketRefSchema.safeParse({ ...ref, url: "не-url" });
 check("невалідний url → помилка схеми", !noUrl.success);
 
+// 5. створення підзадач: маркер робить повторний прогін безпечним
+{
+  const { createIssuesTool } = await import("./agent/tools-board");
+  const { ToolRegistry } = await import("./agent/tools");
+
+  const fresh = new InMemoryBoard();
+  const registry = new ToolRegistry([createIssuesTool(fresh, "run_plan")]);
+  const ctx = { runId: "run_plan", root: process.cwd(), approvedActions: new Set(["create_issues"]) };
+
+  const plan = {
+    tasks: [
+      { title: "додати таблицю magic_links", body: "потрібна для зберігання одноразових токенів" },
+      { title: "додати POST /auth/request", body: "видає токен і шле лист; перевірка — тест на 202" },
+    ],
+  };
+
+  const first = await registry.execute("create_issues", plan, ctx);
+  check("створено дві підзадачі", (await fresh.ready()).length === 2, first.replace(/\n/g, " | "));
+  check("у відповіді номери issues", /#\d+ створено/.test(first));
+
+  const again = await registry.execute("create_issues", plan, ctx);
+  check("повторний виклик не дублює", (await fresh.ready()).length === 2);
+  check("повторний виклик каже «вже існує»", again.includes("вже існує"));
+
+  // 6. схема плану відкидає халтуру ще до створення
+  const bad = [
+    { tasks: [] },
+    { tasks: [{ title: "коротко", body: "теж коротко" }] },
+    { tasks: [{ title: "нормальний заголовок задачі", body: "мало" }] },
+  ];
+  let rejected = 0;
+  for (const input of bad) {
+    try {
+      await registry.execute("create_issues", input, ctx);
+    } catch {
+      rejected++;
+    }
+  }
+  check("порожній план і халтурні задачі відкидаються", rejected === 3, `${rejected} з 3`);
+  check("нічого зайвого не створено", (await fresh.ready()).length === 2);
+}
+
 console.log(failed === 0 ? "\nусі перевірки пройшли" : `\nпровалено: ${failed}`);
 process.exit(failed === 0 ? 0 : 1);

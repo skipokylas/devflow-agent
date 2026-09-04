@@ -17,6 +17,12 @@ export interface Board {
 
   editComment(ref: TicketRef, commentId: string, body: string): Promise<void>;
 
+  /** Створює квиток і одразу кладе його на дошку в колонку todo. */
+  createTicket(input: { title: string; body: string; labels?: string[] }): Promise<TicketRef>;
+
+  /** Пошук за маркером ідемпотентності: чи ми вже створювали це. */
+  findByMarker(marker: string): Promise<TicketRef | null>;
+
   /**
    * Коментарі після заданого моменту — так ловляться відповіді людини.
    * Свої власні позначені mine, щоб полінг не зациклився.

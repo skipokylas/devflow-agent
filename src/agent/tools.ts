@@ -69,6 +69,11 @@ export class ToolRegistry {
     }));
   }
 
+  /** Для складання розширеного реєстру: базові інструменти плюс залежні від контексту. */
+  all(): Tool[] {
+    return [...this.byName.values()];
+  }
+
   /** Ворота питають реєстр, а не самі парсять назви. */
   needsApproval(name: string): boolean {
     return this.byName.get(name)?.access === "write";
