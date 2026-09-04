@@ -84,10 +84,16 @@ const sinceRoadmap = git([
   .split("\n")
   .filter(Boolean);
 
+// Правка, що чекає в цьому ж коміті, теж рахується свіжою — інакше перевірка
+// падала б саме тоді, коли роадмапу щойно оновили.
+const roadmapPending = status.includes("ROADMAP.md");
+
 say(
-  sinceRoadmap.length <= 3,
+  roadmapPending || sinceRoadmap.length <= 3,
   "роадмапа не відстала від коду",
-  sinceRoadmap.length > 3 ? `${sinceRoadmap.length} комітів у src/ після останньої правки ROADMAP.md` : "",
+  !roadmapPending && sinceRoadmap.length > 3
+    ? `${sinceRoadmap.length} комітів у src/ після останньої правки ROADMAP.md`
+    : "",
 );
 
 const claude = docs[0]?.[1] ?? "";

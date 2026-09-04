@@ -40,7 +40,7 @@ export async function tick(
 ): Promise<void> {
   await intake(deps, board, log, repo);
   await collectAnswers(deps, board, log, finishStatus);
-  await advanceNext(deps, board, log, finishStatus);
+  await advanceQueue(deps, board, log, finishStatus);
 }
 
 export async function watch(
@@ -151,28 +151,36 @@ async function isolate(
   }
 }
 
-/** Одна активна робота: якщо щось уже крутиться — цей оберт нічого не починає. */
-async function advanceNext(
+/**
+ * Розбирає чергу до кінця: послідовно, по одній задачі, але без пауз між ними.
+ * Стеля — кількість завдань на початок оберту: якщо робота породжує нові
+ * задачі, вони почекають наступного разу, і цикл не піде вразнос.
+ */
+async function advanceQueue(
   deps: Deps,
   board: Board,
   log: (l: string) => void,
   finishStatus: TicketStatus,
 ): Promise<void> {
-  const runs = await deps.storage.list();
-  if (runs.some((r) => r.status === "running")) return;
+  const initial = (await deps.storage.list()).filter((r) => r.status === "queued").length;
 
-  // FIFO за часом створення: id випадковий, сортування за ним давало довільний порядок.
-  const next = runs
-    .filter((r) => r.status === "queued")
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))[0];
-  if (!next) return;
+  for (let done = 0; done < initial; done++) {
+    const runs = await deps.storage.list();
+    if (runs.some((r) => r.status === "running")) return;
 
-  log(`працюю над ${next.id}`);
-  await isolate(deps, next, log, async () => {
-    if (next.ticket) await board.setStatus(next.ticket, "in_progress");
-    const started = await deps.storage.save({ ...next, status: "running" });
-    await finish(deps, board, await advance(started, withChannel(deps, board, next)), log, finishStatus);
-  });
+    // FIFO за часом створення: id випадковий, сортування за ним давало довільний порядок.
+    const next = runs
+      .filter((r) => r.status === "queued")
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))[0];
+    if (!next) return;
+
+    log(`працюю над ${next.id}`);
+    await isolate(deps, next, log, async () => {
+      if (next.ticket) await board.setStatus(next.ticket, "in_progress");
+      const started = await deps.storage.save({ ...next, status: "running" });
+      await finish(deps, board, await advance(started, withChannel(deps, board, next)), log, finishStatus);
+    });
+  }
 }
 
 async function finish(

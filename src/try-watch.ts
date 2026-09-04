@@ -59,14 +59,14 @@ await tick(deps, board, log);
 let runs = await storage.list();
 check("створено run на кожен квиток", runs.length === 2, `${runs.length}`);
 check("перший квиток узятий у роботу", (await board.get(ref("1"))).status !== "todo");
-check("другий лишився в Ready, поки не дійшла черга", (await board.get(ref("2"))).status === "todo");
-check("один дійшов до паузи", runs.filter((r) => r.status === "waiting_human").length === 1);
-check("другий чекає в черзі", runs.filter((r) => r.status === "queued").length === 1);
+check("обидва пішли з Ready", (await board.ready()).length === 0);
+check("один оберт розбирає всю чергу", runs.filter((r) => r.status === "waiting_human").length === 2,
+  runs.map((r) => r.status).join(", "));
+check("у черзі нічого не лишилось", runs.filter((r) => r.status === "queued").length === 0);
 
-// 2. другий оберт: пауза не блокує — береться наступна задача
+// 2. повторний оберт нічого не змінює
 await tick(deps, board, log);
 runs = await storage.list();
-check("пауза не блокує чергу", runs.filter((r) => r.status === "waiting_human").length === 2);
 check("нових runs не зʼявилось", runs.length === 2, `${runs.length}`);
 
 // 3. людина відповідає коментарем під квитком
