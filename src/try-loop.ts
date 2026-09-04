@@ -141,7 +141,12 @@ const draft = (id: string): Run =>
 
   const write = fakeToolUse("create_issue", { title: "додати таблицю" }, "t_write");
   const channel = new SilentChannel();
-  const withTool = (llm: Deps["llm"]): Deps => ({ ...deps(llm, channel), tools: registry });
+  // Ворота вмикаються явно: типово вони вимкнені, бо справжня перевірка — рев'ю PR.
+  const withTool = (llm: Deps["llm"]): Deps => ({
+    ...deps(llm, channel),
+    tools: registry,
+    confirmWrites: true,
+  });
 
   const paused = await advance(await storage.create(draft("run_gate")), withTool(scriptedLlm([write])));
   check("write-дія зупиняє цикл", paused.status === "waiting_human");
@@ -193,7 +198,11 @@ const draft = (id: string): Run =>
       },
     }),
   ]);
-  const withBoth = (llm: Deps["llm"]): Deps => ({ ...deps(llm, channel), tools: registry2 });
+  const withBoth = (llm: Deps["llm"]): Deps => ({
+    ...deps(llm, channel),
+    tools: registry2,
+    confirmWrites: true,
+  });
   const second = await advance(
     await storage.save({
       ...after,
@@ -204,6 +213,33 @@ const draft = (id: string): Run =>
   );
   check("інший write-інструмент не питає окремо", second.status === "done", second.status);
   check("і теж виконується", other === 1, `${other}`);
+}
+
+// 7a2. типово ворота вимкнені: правка виконується без питання
+{
+  const { defineTool, ToolRegistry } = await import("./agent/tools");
+  const { z } = await import("zod");
+
+  let touched = 0;
+  const open = new ToolRegistry([
+    defineTool({
+      name: "write_something",
+      description: "d",
+      access: "write",
+      input: z.object({ what: z.string() }),
+      execute: async () => {
+        touched++;
+        return "зроблено";
+      },
+    }),
+  ]);
+
+  const run = await advance(await storage.create(draft("run_open")), {
+    ...deps(scriptedLlm([fakeToolUse("write_something", { what: "x" }, "t_o"), fakeText("готово")])),
+    tools: open,
+  });
+  check("без confirmWrites правка йде без питання", run.status === "done", run.status);
+  check("і справді виконується", touched === 1, `${touched}`);
 }
 
 // 7b. кешування: параметр іде в запит, ціна враховує запис і читання

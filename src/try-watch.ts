@@ -169,7 +169,7 @@ check("у звіті видно текст уточнення", updated.includes
     fakeToolUse("create_issues", plan, "t_plan"),
     fakeText("Створив дві підзадачі."),
   ]);
-  const deps4: Deps = { ...deps, storage: storage4, llm };
+  const deps4: Deps = { ...deps, storage: storage4, llm, confirmWrites: true };
 
   await tick(ctxFor({ board: planBoard, deps: deps4 }));
   const planned = (await storage4.list())[0];
@@ -240,7 +240,7 @@ check("у звіті видно текст уточнення", updated.includes
     fakeText("Файл додано."),
   ]);
 
-  const deps6: Deps = { ...deps, storage: storage6, llm, root: repoDir };
+  const deps6: Deps = { ...deps, storage: storage6, llm, root: repoDir, confirmWrites: true };
   const repoRef = { id: "test", root: repoDir, remote: null };
 
   await tick(ctxFor({ board: execBoard, forge, deps: deps6, repo: repoRef }));
@@ -305,6 +305,40 @@ check("у звіті видно текст уточнення", updated.includes
     check("модель отримала вивід команди", seenFailure.includes("помилкою"));
   }
 
+  // 3k. відповідь із термінала йде тим самим шляхом, що й коментар
+  {
+    const { replyTo } = await import("./scheduler");
+
+    const board5 = new InMemoryBoard([ticket("81", "правка з термінала")]);
+    const storage10 = new FileStorage(`${dir}/runs10`);
+    const llm5 = scriptedLlm([
+      fakeToolUse("write_file", { path: "fromterminal.ts", content: "export const t = 1;\n" }, "t_t"),
+      fakeText("Готово."),
+    ]);
+    const deps10: Deps = { ...deps, storage: storage10, llm: llm5, root: repoDir, confirmWrites: true };
+    const repo10 = { id: "test", root: repoDir, remote: null };
+    const ctx10 = ctxFor({ board: board5, deps: deps10, repo: repo10 });
+
+    await tick(ctx10);
+    const paused10 = (await storage10.list())[0];
+    check("прогін став на ворота", paused10?.status === "waiting_human");
+
+    await replyTo(ctx10, paused10?.id ?? "", "так");
+
+    const doneTerminal = await storage10.load(paused10?.id ?? "");
+    check("відповідь із термінала завершила роботу", doneTerminal.status === "done", doneTerminal.status);
+    check(
+      "правка не потрапила в теку користувача",
+      !(await fs.stat(nodePath.join(repoDir, "fromterminal.ts")).then(() => true, () => false)),
+    );
+    check(
+      "правка лежить у робочій копії",
+      await fs
+        .stat(nodePath.join(sandbox, "test", "wt", paused10?.id ?? "", "fromterminal.ts"))
+        .then(() => true, () => false),
+    );
+  }
+
   // 3j. вичерпаний ліміт кроків продовжується коментарем, робота не втрачається
   {
     const board4 = new InMemoryBoard([ticket("80", "довга задача")]);
@@ -346,7 +380,7 @@ check("у звіті видно текст уточнення", updated.includes
       fakeText("Готово."),
     ]);
 
-    const deps7: Deps = { ...deps, storage: storage7, llm: llm2, root: repoDir };
+    const deps7: Deps = { ...deps, storage: storage7, llm: llm2, root: repoDir, confirmWrites: true };
     await tick(ctxFor({ board: board2, forge: forge2, deps: deps7, repo: withRemote }));
     const paused = (await storage7.list())[0];
     board2.reply(ref("78"), "так");

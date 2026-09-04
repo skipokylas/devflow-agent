@@ -17,6 +17,13 @@ export type Deps = {
   maxSteps: number;
   root: string;
   system?: string;
+  /**
+   * Питати дозволу на кожну write-дію. Типово вимкнено: справжні ворота — це
+   * рев'ю PR, а не діалог посеред роботи. Робоча копія одноразова, шляхи
+   * обмежені коренем, команди з закритого переліку, у main нічого не потрапляє.
+   * Питання посеред роботи не стримує агента — воно лише привчає тиснути «так».
+   */
+  confirmWrites?: boolean;
 };
 
 export class NotWaiting extends Error {
@@ -137,14 +144,19 @@ async function loop(
       // Дозволи, видані людиною раніше в цьому ж run. Порожній набір тут означав
       // би, що ворота пропускають виклик, а реєстр його відхиляє — і агент
       // упирався б у стіну після кожного підтвердження.
-      approvedActions: new Set(current.approved),
+      // Коли підтвердження вимкнені, дозвіл на write вважається виданим наперед.
+      approvedActions: new Set(
+        deps.confirmWrites ? current.approved : [WRITE_ACCESS, ...current.approved],
+      ),
     };
 
     // Ворота дозволу: write-дія без згоди людини зупиняє цикл. Перевірка стоїть
     // у коді, а не в промпті — інакше вона трималася б на слухняності моделі.
-    const gated = toolUses.find(
-      (use) => deps.tools.needsApproval(use.name) && !current.approved.includes(WRITE_ACCESS),
-    );
+    const gated = deps.confirmWrites
+      ? toolUses.find(
+          (use) => deps.tools.needsApproval(use.name) && !current.approved.includes(WRITE_ACCESS),
+        )
+      : undefined;
     if (gated) {
       return await pause(current, gated, results, deps, tracer, call.id, {
         tool: gated.name,
@@ -234,7 +246,7 @@ export async function resume(runId: string, answer: string, deps: Deps): Promise
     ? await runTool(
         { ...deps, tools: deps.tools },
         { type: "tool_use", id: toolUseId, name: approval.tool, input: approval.input, caller: { type: "direct" } },
-        { runId: run.id, root: deps.root, approvedActions: new Set(base.approved) },
+        { runId: run.id, root: deps.root, approvedActions: new Set([WRITE_ACCESS, ...base.approved]) },
         new Tracer(deps.trace, run.id),
         toolUseId,
       )

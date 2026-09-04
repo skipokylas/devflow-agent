@@ -9,7 +9,10 @@ import { resolveRepo, stateDir, type RepoRef } from "./repo";
 import { FileSink } from "./trace/sink";
 
 /** Composition root. Єдине місце, де обираються конкретні реалізації портів. */
-export function buildDeps(overrides: Partial<Deps> = {}, remoteName = "origin"): Deps & { repo: RepoRef } {
+export function buildDeps(
+  overrides: Partial<Deps> = {},
+  remoteName = "origin",
+): Deps & { repo: RepoRef } {
   const repo = resolveRepo(process.env["AGENT_REPO"] ?? process.cwd(), remoteName);
   const state = stateDir(repo);
 
@@ -25,6 +28,7 @@ export function buildDeps(overrides: Partial<Deps> = {}, remoteName = "origin"):
     // Вісім кроків вистачало на аналіз і планування, але не на роботу.
     maxSteps: Number(process.env["MAX_STEPS"] ?? 25),
     root: repo.root,
+    confirmWrites: process.env["AGENT_CONFIRM_WRITES"] === "1",
     system: promptOf(process.env["AGENT_PROMPT"] ?? "v6"),
     ...overrides,
   };

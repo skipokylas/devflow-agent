@@ -76,6 +76,28 @@ export async function watch(ctx: Ctx, opts: WatchOptions): Promise<void> {
   }
 }
 
+/**
+ * Відповідь із термінала. Раніше CLI викликав resume напряму, повз execute —
+ * тобто без робочої копії, воріт і доставки: правки лягали в теку користувача,
+ * а PR не створювався.
+ */
+export async function replyTo(ctx: Ctx, runId: string, answer: string): Promise<void> {
+  const run = await ctx.deps.storage.load(runId);
+
+  if (run.status === "waiting_human") {
+    await execute(ctx, run, (runDeps) => resume(runId, answer, runDeps));
+    return;
+  }
+
+  // done або failed — продовження тією ж історією, як коментар під квитком.
+  const reopened = await ctx.deps.storage.save({
+    ...run,
+    status: "running",
+    messages: [...run.messages, { role: "user", content: answer }],
+  });
+  await execute(ctx, reopened, (runDeps) => advance(reopened, runDeps));
+}
+
 /** Після простою: run у статусі running означає, що процес помер посеред роботи. */
 export async function recover(deps: Deps, log: (l: string) => void): Promise<void> {
   for (const run of await deps.storage.list()) {

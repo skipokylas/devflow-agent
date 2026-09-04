@@ -14,7 +14,7 @@ import type { Board } from "./board/board";
 import { loadConfig } from "./config";
 import { GitHubForge } from "./forge/github";
 import { init } from "./init";
-import { recover, tick, watch, type Ctx } from "./scheduler";
+import { recover, replyTo, tick, watch, type Ctx } from "./scheduler";
 import { serve, DEFAULT_PORT } from "./serve";
 import { openTunnel, rememberServeUrl } from "./tunnel";
 import { RunNotFound } from "./db/storage";
@@ -91,6 +91,7 @@ function usage(): void {
   AGENT_PROMPT=v1  варіант системного промпта (типово v4)
   AGENT_REPO=path  репозиторій, з яким працюємо (типово поточна тека)
   AGENT_BOARD=memory  дошка в памʼяті замість GitHub (для перевірок)
+  AGENT_CONFIRM_WRITES=1  питати дозволу на кожну правку (типово ні)
   GITHUB_TOKEN     токен зі scope repo і project
   MODEL=...        модель (типово claude-opus-5)
   MAX_STEPS=...    ліміт кроків циклу (типово 25)
@@ -112,9 +113,17 @@ async function cmdRun(args: string[]): Promise<void> {
 
 async function cmdReply(args: string[]): Promise<void> {
   const [id, answer] = args;
-  if (!id || !answer) throw new Error(`потрібні id і відповідь: agent reply <runId> "<відповідь>"`);
+  if (!id || !answer) throw new Error(`потрібні id і відповідь: devflow reply <runId> "<відповідь>"`);
 
-  assertRunBelongs(await storage.load(id), repo);
+  const run = await storage.load(id);
+  assertRunBelongs(run, repo);
+
+  // Прогін із квитка веде планувальник: там робоча копія, ворота якості й PR.
+  if (run.ticket) {
+    await replyTo(await buildCtx(), id, answer);
+    return;
+  }
+
   const finished = await resume(id, answer, deps);
   console.log(`\n${finished.id} → ${finished.status}`);
 }
@@ -123,7 +132,14 @@ async function cmdRetry(args: string[]): Promise<void> {
   const id = args[0];
   if (!id) throw new Error("потрібен id: agent retry <runId>");
 
-  assertRunBelongs(await storage.load(id), repo);
+  const run = await storage.load(id);
+  assertRunBelongs(run, repo);
+
+  if (run.ticket) {
+    await replyTo(await buildCtx(), id, "продовжуй");
+    return;
+  }
+
   const finished = await retry(id, deps);
   console.log(`\n${finished.id} → ${finished.status}`);
 }
@@ -158,7 +174,8 @@ async function cmdTick(): Promise<void> {
 async function buildCtx(): Promise<Ctx> {
   const config = await loadConfig(repo.root, repo.id);
   return {
-    deps,
+    // Ворота вмикає або конфіг репозиторію, або змінна оточення на один запуск.
+    deps: { ...deps, confirmWrites: deps.confirmWrites || config.execution.confirmWrites },
     ...(await buildServices()),
     repo,
     log: (line: string) => console.log(line),

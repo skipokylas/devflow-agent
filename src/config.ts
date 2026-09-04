@@ -9,6 +9,12 @@ import { ticketStatusSchema } from "./board/types";
  * JSON, а не YAML, бо в Node немає вбудованого парсера, а полів вісім.
  */
 export const configSchema = z.object({
+  execution: z
+    .object({
+      /** Питати дозволу на кожну правку. Типово ні: ворота — це рев'ю PR. */
+      confirmWrites: z.boolean().default(false),
+    })
+    .default({ confirmWrites: false }),
   git: z
     .object({
       /** Репо з кількома remote мусить назвати свій явно. */
